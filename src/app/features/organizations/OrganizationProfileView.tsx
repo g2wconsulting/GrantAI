@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { AlertCircle, Briefcase, Check, MapPin, MoreHorizontal, UserPlus } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ORGS, financialsData } from "../../data/demoData";
+import { financialsData } from "../../data/demoData";
 import { BTN_PRIMARY, CARD } from "../../styles/classNames";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
 export function OrganizationProfileView() {
-  const { activeOrg: org } = useActiveOrg();
+  const { org } = useActiveOrg();
   const [tab, setTab] = useState("overview");
-  const o = ORGS[org];
   const missing = ["Logic Model", "Board Roster (2025)", "Evaluation Framework", "Indirect Cost Rate Agreement"];
   const circumference = 2 * Math.PI * 38;
+
+  if (!org) return null;
+  const o = { ...org, staff: org.staff_count ?? "—", budget: org.budget_size ?? "—" };
   const dash = circumference * (o.readiness / 100);
 
   return (
@@ -59,7 +61,7 @@ export function OrganizationProfileView() {
         <div className="grid grid-cols-2 gap-4">
           <div className={`${CARD} p-5`}>
             <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Mission</h3>
-            <p className="text-sm text-slate-700 leading-relaxed">To advance economic opportunity and community resilience through innovative workforce development, digital equity, and community development programs that empower individuals, strengthen families, and build thriving communities.</p>
+            <p className="text-sm text-slate-700 leading-relaxed">{org.mission || "No mission statement on file yet — add one in Settings to improve grant matching."}</p>
           </div>
           <div className={`${CARD} p-5`}>
             <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Service Areas & Population</h3>

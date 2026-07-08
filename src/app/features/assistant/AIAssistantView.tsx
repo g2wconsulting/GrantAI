@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Send, Sparkles } from "lucide-react";
-import { AI_RESPONSES, DEFAULT_AI, ORGS } from "../../data/demoData";
+import { AI_RESPONSES, DEFAULT_AI } from "../../data/demoData";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
 type Message = { role: "ai" | "user"; content: string };
 
 export function AIAssistantView() {
-  const { activeOrg: org } = useActiveOrg();
-  const [messages, setMessages] = useState<Message[]>([{ role: "ai", content: `Hello, Jordan! I have full context on all three organizations — Horizons Community Foundation, TwiddleU, and Jobvair. I can help you find grants, draft proposals, generate budgets, check compliance, and build strategy for each. What can I help you with today?` }]);
+  const { org } = useActiveOrg();
+  const [messages, setMessages] = useState<Message[]>([{ role: "ai", content: `Hello! I have context on ${org?.name ?? "your organization"}. I can help you find grants, draft proposals, generate budgets, check compliance, and build strategy. What can I help you with today?` }]);
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
-  const orgName = ORGS[org].name;
+  const orgName = org?.name ?? "your organization";
 
   const suggestions = [
     "What grants should TwiddleU apply for?",
@@ -43,7 +43,7 @@ export function AIAssistantView() {
         </div>
         <div>
           <p className="text-base font-semibold text-slate-800">GrantAI Assistant</p>
-          <p className="text-sm text-teal-600">Full context on {orgName}, TwiddleU, and Jobvair · 47 matched grants · Real-time intelligence</p>
+          <p className="text-sm text-teal-600">Full context on {orgName} · Real-time intelligence</p>
         </div>
         <div className="ml-auto flex items-center gap-1.5"><div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" /><span className="text-sm text-teal-500">Online</span></div>
       </div>

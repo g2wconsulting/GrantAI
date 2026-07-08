@@ -1,17 +1,25 @@
 import { useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { Bell, Check, ChevronDown, Plus, Search, Sparkles } from "lucide-react";
+import { Bell, Check, ChevronDown, LogOut, Plus, Search, Sparkles } from "lucide-react";
 import { NAV_ITEMS, getViewLabel } from "../config/navigation";
-import { ORGS } from "../data/demoData";
 import { useActiveOrg } from "../hooks/useActiveOrg";
+import { useAuth } from "../context/AuthContext";
 import { BTN_PRIMARY } from "../styles/classNames";
-import type { OrgKey } from "../types";
 
 export function AppLayout() {
   const [orgOpen, setOrgOpen] = useState(false);
-  const { activeOrg, setActiveOrg, org } = useActiveOrg();
+  const { orgs, activeOrgId, setActiveOrgId, org } = useActiveOrg();
+  const { user, signOut } = useAuth();
   const location = useLocation();
   const title = getViewLabel(location.pathname);
+
+  if (!org) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#f0fdf5]">
+        <p className="text-slate-500">Loading your organization…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f0fdf5]" style={{ fontFamily: "'Outfit', 'DM Sans', sans-serif" }}>
@@ -43,16 +51,16 @@ export function AppLayout() {
           </button>
           {orgOpen && (
             <div className="absolute left-3 right-3 top-full mt-1 bg-white border border-border rounded-xl shadow-lg z-50 overflow-hidden">
-              {(Object.keys(ORGS) as OrgKey[]).map(key => (
-                <button key={key} onClick={() => { setActiveOrg(key); setOrgOpen(false); }} className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-[#f5fdf8] transition-colors ${activeOrg === key ? "bg-[#e8faf0]" : ""}`}>
+              {orgs.map((o) => (
+                <button key={o.id} onClick={() => { setActiveOrgId(o.id); setOrgOpen(false); }} className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-[#f5fdf8] transition-colors ${activeOrgId === o.id ? "bg-[#e8faf0]" : ""}`}>
                   <div className="w-6 h-6 rounded-md bg-gradient-to-br from-teal-500 to-blue-500 flex items-center justify-center shrink-0">
-                    <span className="text-white text-sm font-bold">{ORGS[key].short}</span>
+                    <span className="text-white text-sm font-bold">{o.short}</span>
                   </div>
                   <div>
-                    <p className="text-base font-semibold text-slate-800">{ORGS[key].name}</p>
-                    <p className="text-sm text-slate-400">{ORGS[key].city}</p>
+                    <p className="text-base font-semibold text-slate-800">{o.name}</p>
+                    <p className="text-sm text-slate-400">{o.city}</p>
                   </div>
-                  {activeOrg === key && <Check className="w-3 h-3 text-teal-600 ml-auto" />}
+                  {activeOrgId === o.id && <Check className="w-3 h-3 text-teal-600 ml-auto" />}
                 </button>
               ))}
             </div>
@@ -76,14 +84,17 @@ export function AppLayout() {
         </nav>
 
         <div className="px-3 py-3 border-t border-black/10">
-          <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-black/5 cursor-pointer transition-colors">
+          <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-black/5 transition-colors">
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shrink-0">
-              <span className="text-white text-sm font-bold">JA</span>
+              <span className="text-white text-sm font-bold">{user?.email?.slice(0, 2).toUpperCase() ?? "U"}</span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-slate-800 text-sm font-medium truncate">Jordan Adams</p>
-              <p className="text-slate-600 text-sm">Grant Director</p>
+              <p className="text-slate-800 text-sm font-medium truncate">{user?.email}</p>
+              <p className="text-slate-600 text-sm">Member</p>
             </div>
+            <button onClick={() => signOut()} title="Sign out" className="p-1.5 rounded-md hover:bg-black/10 shrink-0">
+              <LogOut className="w-3.5 h-3.5 text-slate-500" />
+            </button>
           </div>
         </div>
       </aside>
