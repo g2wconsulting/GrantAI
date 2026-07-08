@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
+import { useAuth } from "../../context/AuthContext";
 import { BTN_PRIMARY } from "../../styles/classNames";
 
 const FOCUS_OPTIONS = [
@@ -18,6 +19,7 @@ const FOCUS_OPTIONS = [
 
 export function OnboardingView() {
   const { createOrg } = useActiveOrg();
+  const { user, signOut } = useAuth();
   const [name, setName] = useState("");
   const [type, setType] = useState("Community Nonprofit");
   const [city, setCity] = useState("");
@@ -55,9 +57,15 @@ export function OnboardingView() {
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500 to-blue-500 flex items-center justify-center shrink-0">
             <Sparkles className="w-4 h-4 text-white" />
           </div>
-          <div>
+          <div className="flex-1">
             <p className="text-slate-800 font-bold text-base leading-none">GrantAI</p>
             <p className="text-slate-500 text-sm mt-0.5">Set up your organization</p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-slate-400">{user?.email}</p>
+            <button type="button" onClick={() => signOut()} className="text-sm text-teal-600 hover:underline">
+              Sign out
+            </button>
           </div>
         </div>
 
