@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Check, CheckCircle2, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, CheckCircle2, Download, Folder, Plus, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { PROPOSAL_SECTIONS } from "../../data/demoData";
 import { BTN_PRIMARY, BTN_SECONDARY, CARD } from "../../styles/classNames";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
@@ -14,6 +14,8 @@ type ProposalRow = {
   org_opportunity: { opportunity: { title: string } } | null;
 };
 
+type FileItem = { name: string; id: string | null };
+
 export function ProposalBuilderView() {
   const { org } = useActiveOrg();
   const [proposals, setProposals] = useState<ProposalRow[]>([]);
@@ -22,6 +24,12 @@ export function ProposalBuilderView() {
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [currentFolder, setCurrentFolder] = useState("");
+  const [newFolderMode, setNewFolderMode] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     if (!org) return;
@@ -39,9 +47,55 @@ export function ProposalBuilderView() {
 
   const selected = proposals.find((p) => p.id === selectedId) ?? null;
 
+  const storagePrefix = org && selected ? `${org.id}/proposals/${selected.id}/${currentFolder ? currentFolder + "/" : ""}` : null;
+
+  const loadFiles = useCallback(async () => {
+    if (!storagePrefix) return;
+    const { data } = await supabase.storage.from("org-files").list(storagePrefix, { limit: 100 });
+    setFiles((data ?? []).filter((f) => f.name !== ".keep").map((f) => ({ name: f.name, id: f.id })));
+  }, [storagePrefix]);
+
+  useEffect(() => {
+    loadFiles();
+  }, [loadFiles]);
+
+  async function uploadFile(file: File) {
+    if (!storagePrefix) return;
+    setUploading(true);
+    await supabase.storage.from("org-files").upload(`${storagePrefix}${file.name}`, file, { upsert: true });
+    setUploading(false);
+    await loadFiles();
+  }
+
+  async function createFolder() {
+    if (!storagePrefix || !newFolderName.trim()) return;
+    const placeholder = new Blob([""]);
+    await supabase.storage.from("org-files").upload(`${storagePrefix}${newFolderName.trim()}/.keep`, placeholder);
+    setNewFolderName("");
+    setNewFolderMode(false);
+    await loadFiles();
+  }
+
+  async function downloadFile(name: string) {
+    if (!storagePrefix) return;
+    const { data } = await supabase.storage.from("org-files").createSignedUrl(`${storagePrefix}${name}`, 60);
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+  }
+
+  async function deleteFile(name: string, isFolder: boolean) {
+    if (!storagePrefix) return;
+    const path = isFolder ? `${storagePrefix}${name}/.keep` : `${storagePrefix}${name}`;
+    await supabase.storage.from("org-files").remove([path]);
+    await loadFiles();
+  }
+
   useEffect(() => {
     setDraft(selected?.content?.[activeSection] ?? "");
   }, [selected, activeSection]);
+
+  useEffect(() => {
+    setCurrentFolder("");
+  }, [selectedId]);
 
   async function saveDraft() {
     if (!selected) return;
@@ -132,6 +186,58 @@ export function ProposalBuilderView() {
                 <button className={BTN_PRIMARY} onClick={markComplete}><Check className="w-3.5 h-3.5" />Mark Submitted</button>
               </div>
             </div>
+          </div>
+
+          <div className={`${CARD} p-5 mt-4`}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-slate-900">Files</h3>
+                {currentFolder && (
+                  <button onClick={() => setCurrentFolder("")} className="text-sm text-teal-600 hover:underline">← Back to root</button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button className={BTN_SECONDARY} onClick={() => setNewFolderMode(true)}><Plus className="w-3.5 h-3.5" />New Folder</button>
+                <button className={BTN_PRIMARY} onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                  <Upload className="w-3.5 h-3.5" />{uploading ? "Uploading…" : "Upload"}
+                </button>
+                <input ref={fileInputRef} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && uploadFile(e.target.files[0])} />
+              </div>
+            </div>
+
+            {newFolderMode && (
+              <div className="flex gap-2 mb-3">
+                <input autoFocus value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && createFolder()} placeholder="Folder name..." className="flex-1 text-sm border border-teal-300 rounded-lg px-3 py-1.5 outline-none bg-[#f5fdf8]" />
+                <button onClick={createFolder} className={`${BTN_PRIMARY} text-sm`}>Create</button>
+                <button onClick={() => setNewFolderMode(false)} className={`${BTN_SECONDARY} text-sm`}>Cancel</button>
+              </div>
+            )}
+
+            {files.length === 0 ? (
+              <p className="text-sm text-slate-400">No files yet — upload documents or create folders to organize this proposal's materials.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {files.map((f) => {
+                  const isFolder = f.id === null;
+                  return (
+                    <div key={f.name} className="flex items-center gap-2 p-2.5 rounded-lg border border-border hover:bg-[#f5fdf8] transition-colors group">
+                      {isFolder ? (
+                        <button onClick={() => setCurrentFolder(currentFolder ? `${currentFolder}/${f.name}` : f.name)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                          <Folder className="w-4 h-4 text-teal-500 shrink-0" />
+                          <span className="text-sm text-slate-700 truncate">{f.name}</span>
+                        </button>
+                      ) : (
+                        <button onClick={() => downloadFile(f.name)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                          <Download className="w-4 h-4 text-slate-400 shrink-0" />
+                          <span className="text-sm text-slate-700 truncate">{f.name}</span>
+                        </button>
+                      )}
+                      <button onClick={() => deleteFile(f.name, isFolder)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><X className="w-3.5 h-3.5" /></button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

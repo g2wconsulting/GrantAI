@@ -1,16 +1,21 @@
 import { useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router";
-import { Bell, Check, ChevronDown, LogOut, Plus, Search, Sparkles } from "lucide-react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import { Bell, Check, ChevronDown, LogOut, Plus, Search, Sparkles, X } from "lucide-react";
 import { NAV_ITEMS, getViewLabel } from "../config/navigation";
 import { useActiveOrg } from "../hooks/useActiveOrg";
 import { useAuth } from "../context/AuthContext";
-import { BTN_PRIMARY } from "../styles/classNames";
+import { addManualGrant } from "../lib/dataService";
+import { BTN_PRIMARY, BTN_SECONDARY, CARD } from "../styles/classNames";
 
 export function AppLayout() {
   const [orgOpen, setOrgOpen] = useState(false);
+  const [showNewGrant, setShowNewGrant] = useState(false);
+  const [grantForm, setGrantForm] = useState({ title: "", funder: "", deadline: "", amountFloor: "", amountCeiling: "" });
+  const [savingGrant, setSavingGrant] = useState(false);
   const { orgs, activeOrgId, setActiveOrgId, org } = useActiveOrg();
   const { user, signOut } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const title = getViewLabel(location.pathname);
 
   if (!org) {
@@ -19,6 +24,22 @@ export function AppLayout() {
         <p className="text-slate-500">Loading your organization…</p>
       </div>
     );
+  }
+
+  async function submitNewGrant() {
+    if (!org || !grantForm.title.trim()) return;
+    setSavingGrant(true);
+    await addManualGrant(org.id, {
+      title: grantForm.title,
+      funder: grantForm.funder,
+      deadline: grantForm.deadline || null,
+      amountFloor: grantForm.amountFloor ? Number(grantForm.amountFloor) : null,
+      amountCeiling: grantForm.amountCeiling ? Number(grantForm.amountCeiling) : null,
+    });
+    setSavingGrant(false);
+    setShowNewGrant(false);
+    setGrantForm({ title: "", funder: "", deadline: "", amountFloor: "", amountCeiling: "" });
+    navigate("/pipeline");
   }
 
   return (
@@ -118,9 +139,37 @@ export function AppLayout() {
               <Bell className="w-4 h-4 text-slate-400" />
               <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-gradient-to-br from-teal-500 to-blue-500 rounded-full" />
             </button>
-            <button className={BTN_PRIMARY}><Plus className="w-3.5 h-3.5" />New Grant</button>
+            <button className={BTN_PRIMARY} onClick={() => setShowNewGrant(true)}><Plus className="w-3.5 h-3.5" />New Grant</button>
           </div>
         </header>
+
+        {showNewGrant && (
+          <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={() => setShowNewGrant(false)}>
+            <div className={`${CARD} p-5 w-full max-w-md`} onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-slate-900 text-base">Add a Grant</h3>
+                <button onClick={() => setShowNewGrant(false)} className="text-slate-300 hover:text-slate-500"><X className="w-4 h-4" /></button>
+              </div>
+              <p className="text-sm text-slate-400 mb-4">Already know about a grant? Add it directly — it'll appear in your Pipeline with a draft proposal and budget ready to go.</p>
+              <div className="space-y-3">
+                <input placeholder="Grant title *" value={grantForm.title} onChange={(e) => setGrantForm({ ...grantForm, title: e.target.value })} className="w-full text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300" />
+                <input placeholder="Funder" value={grantForm.funder} onChange={(e) => setGrantForm({ ...grantForm, funder: e.target.value })} className="w-full text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300" />
+                <div>
+                  <label className="text-sm text-slate-400 block mb-1">Deadline</label>
+                  <input type="date" value={grantForm.deadline} onChange={(e) => setGrantForm({ ...grantForm, deadline: e.target.value })} className="w-full text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <input placeholder="Min amount" type="number" value={grantForm.amountFloor} onChange={(e) => setGrantForm({ ...grantForm, amountFloor: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300" />
+                  <input placeholder="Max amount" type="number" value={grantForm.amountCeiling} onChange={(e) => setGrantForm({ ...grantForm, amountCeiling: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300" />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button onClick={submitNewGrant} disabled={savingGrant || !grantForm.title.trim()} className={`${BTN_PRIMARY} flex-1 justify-center`}>{savingGrant ? "Adding…" : "Add Grant"}</button>
+                <button onClick={() => setShowNewGrant(false)} className={BTN_SECONDARY}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <main className="flex-1 overflow-y-auto p-6" onClick={() => orgOpen && setOrgOpen(false)}>
           <Outlet />

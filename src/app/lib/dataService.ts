@@ -175,3 +175,66 @@ export async function addToPipeline(orgId: string, orgOpportunityId: string) {
 
   return { error: null };
 }
+
+/**
+ * Manually add a grant you already know about (not from Grants.gov or AI
+ * search). Creates the opportunity, links it to your org, and — just like
+ * "Add to Pipeline" — auto-creates a draft proposal, budget line, and
+ * calendar deadline for it.
+ */
+export async function addManualGrant(
+  orgId: string,
+  input: { title: string; funder: string; deadline: string | null; amountFloor: number | null; amountCeiling: number | null }
+) {
+  const externalId = `manual:${crypto.randomUUID()}`;
+
+  const { data: opp, error: oppError } = await supabase
+    .from("opportunities")
+    .insert({
+      external_id: externalId,
+      title: input.title,
+      funder: input.funder,
+      deadline: input.deadline,
+      category: "Manual",
+      amount_floor: input.amountFloor,
+      amount_ceiling: input.amountCeiling,
+    })
+    .select()
+    .single();
+
+  if (oppError || !opp) return { error: oppError?.message ?? "Failed to create grant" };
+
+  const { data: orgOpp, error: orgOppError } = await supabase
+    .from("org_opportunities")
+    .insert({
+      org_id: orgId,
+      opportunity_id: opp.id,
+      match_score: 100,
+      match_reasons: ["Manually added"],
+      stage: "qualified",
+      win_prob: 60,
+    })
+    .select()
+    .single();
+
+  if (orgOppError || !orgOpp) return { error: orgOppError?.message ?? "Failed to link grant" };
+
+  const result = await addToPipeline(orgId, orgOpp.id);
+  return result;
+}
+
+/** Fetch this org's manually-logged grant history (pre-platform awards). */
+export async function fetchGrantHistory(orgId: string) {
+  const { data, error } = await supabase.from("grant_history").select("*").eq("org_id", orgId).order("created_at", { ascending: false });
+  return { data: data ?? [], error: error?.message ?? null };
+}
+
+/** Fetch grants this org has actually won through the platform pipeline. */
+export async function fetchAwardedGrants(orgId: string) {
+  const { data, error } = await supabase
+    .from("org_opportunities")
+    .select("*, opportunity:opportunities(*)")
+    .eq("org_id", orgId)
+    .eq("stage", "awarded");
+  return { data: data ?? [], error: error?.message ?? null };
+}

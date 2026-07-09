@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Calendar, ExternalLink, RefreshCw, Search, Sparkles } from "lucide-react";
 import { BTN_PRIMARY, BTN_SECONDARY, CARD } from "../../styles/classNames";
 import { MatchScore } from "../../components/common/MatchScore";
@@ -32,6 +32,7 @@ export function DiscoveryView() {
   const [aiSearching, setAiSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const autoTriggered = useRef(false);
 
   const load = useCallback(async () => {
     if (!org) return;
@@ -86,6 +87,16 @@ export function DiscoveryView() {
     await load();
   }
 
+  // First time you land here with nothing yet, go ahead and find grants
+  // for you automatically rather than requiring a click.
+  useEffect(() => {
+    if (!loading && rows.length === 0 && !autoTriggered.current && org) {
+      autoTriggered.current = true;
+      void handleSync();
+      void handleAiSearch();
+    }
+  }, [loading, rows.length, org]);
+
   function daysUntil(dateStr: string | null) {
     if (!dateStr) return null;
     const d = new Date(dateStr);
@@ -119,13 +130,17 @@ export function DiscoveryView() {
         </div>
       </div>
 
-      {loading && <p className="text-sm text-slate-400 px-1">Loading matched grants…</p>}
+      {(loading || syncing || aiSearching) && (
+        <p className="text-sm text-slate-400 px-1">
+          {syncing || aiSearching ? "Finding grants that match your mission — this runs automatically, no need to click anything…" : "Loading matched grants…"}
+        </p>
+      )}
 
-      {!loading && rows.length === 0 && (
+      {!loading && !syncing && !aiSearching && rows.length === 0 && (
         <div className={`${CARD} p-8 text-center`}>
           <Sparkles className="w-6 h-6 text-teal-400 mx-auto mb-2" />
-          <p className="text-slate-600 font-medium">No grants synced yet</p>
-          <p className="text-sm text-slate-400 mt-1">Click "Sync Live Grants" to pull current opportunities from Grants.gov and score them against your organization profile.</p>
+          <p className="text-slate-600 font-medium">No matching grants found yet</p>
+          <p className="text-sm text-slate-400 mt-1">We searched Grants.gov and the web based on your org profile. Try updating your mission/focus areas in Settings for better matches, then click Sync again.</p>
         </div>
       )}
 
