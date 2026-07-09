@@ -20,6 +20,7 @@ type Row = {
     deadline: string | null;
     category: string | null;
     external_id: string | null;
+    source_url: string | null;
   };
 };
 
@@ -28,6 +29,7 @@ export function DiscoveryView() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [aiSearching, setAiSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
 
@@ -51,6 +53,25 @@ export function DiscoveryView() {
     const result = await syncGrantsForOrg(org);
     if (result.error) setError(result.error);
     setSyncing(false);
+    await load();
+  }
+
+  async function handleAiSearch() {
+    if (!org) return;
+    setAiSearching(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/discover-grants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orgId: org.id }),
+      });
+      const result = await res.json();
+      if (!res.ok) setError(result.error ?? "AI search failed");
+    } catch (err) {
+      setError(String(err));
+    }
+    setAiSearching(false);
     await load();
   }
 
@@ -80,15 +101,19 @@ export function DiscoveryView() {
             <Search className="w-4 h-4 text-slate-400 shrink-0" />
             <input className="flex-1 bg-transparent text-sm text-slate-700 placeholder:text-slate-400 outline-none" placeholder="Search grants by keyword, funder, category, amount..." />
           </div>
-          <button onClick={handleSync} disabled={syncing} className={BTN_PRIMARY}>
+          <button onClick={handleSync} disabled={syncing} className={BTN_SECONDARY}>
             <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Syncing…" : "Sync Live Grants"}
+            {syncing ? "Syncing…" : "Sync Grants.gov"}
+          </button>
+          <button onClick={handleAiSearch} disabled={aiSearching} className={BTN_PRIMARY}>
+            <Sparkles className={`w-3.5 h-3.5 ${aiSearching ? "animate-pulse" : ""}`} />
+            {aiSearching ? "Searching the web…" : "AI Web Search"}
           </button>
         </div>
         {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
         <div className="flex items-center gap-2 mt-3 flex-wrap">
           <span className="text-sm text-slate-400">
-            Pulling from Grants.gov, matched against: {org?.focus_areas?.join(", ") || "your org profile"}
+            Grants.gov (federal) + AI web search (foundations, corporate, state/local), matched against: {org?.focus_areas?.join(", ") || "your org profile"}
           </span>
           <span className="ml-auto text-sm text-slate-400">{rows.length} opportunities</span>
         </div>
@@ -151,12 +176,16 @@ export function DiscoveryView() {
                   {added ? "In Pipeline ✓" : "Add to Pipeline"}
                 </button>
                 <div className="ml-auto">
-                  {opp.external_id ? (
+                  {opp.source_url ? (
+                    <a href={opp.source_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-teal-600 transition-colors">
+                      <ExternalLink className="w-3 h-3" />View Source
+                    </a>
+                  ) : opp.external_id ? (
                     <a href={grantsGovUrl(opp.external_id)} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-teal-600 transition-colors">
                       <ExternalLink className="w-3 h-3" />View on Grants.gov
                     </a>
                   ) : (
-                    <span className="flex items-center gap-1.5 text-sm text-slate-300"><ExternalLink className="w-3 h-3" />Grants.gov</span>
+                    <span className="flex items-center gap-1.5 text-sm text-slate-300"><ExternalLink className="w-3 h-3" />No link available</span>
                   )}
                 </div>
               </div>
