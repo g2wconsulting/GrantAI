@@ -66,33 +66,33 @@ export function ActiveOrgProvider({ children }: { children: ReactNode }) {
   const createOrg = useCallback(
     async (input: Partial<OrgRecord> & { name: string }) => {
       if (!user) return { error: "Not signed in" };
-      const { data, error } = await supabase
-        .from("orgs")
-        .insert({
-          name: input.name,
-          short: input.short ?? input.name.slice(0, 2).toUpperCase(),
-          type: input.type ?? null,
-          city: input.city ?? null,
-          ein: input.ein ?? null,
-          uei: input.uei ?? null,
-          mission: input.mission ?? null,
-          focus_areas: input.focus_areas ?? [],
-          budget_size: input.budget_size ?? null,
-          staff_count: input.staff_count ?? null,
-        })
-        .select()
-        .single();
 
-      if (error || !data) return { error: error?.message ?? "Failed to create org" };
+      const newId = crypto.randomUUID();
+
+      const { error } = await supabase.from("orgs").insert({
+        id: newId,
+        name: input.name,
+        short: input.short ?? input.name.slice(0, 2).toUpperCase(),
+        type: input.type ?? null,
+        city: input.city ?? null,
+        ein: input.ein ?? null,
+        uei: input.uei ?? null,
+        mission: input.mission ?? null,
+        focus_areas: input.focus_areas ?? [],
+        budget_size: input.budget_size ?? null,
+        staff_count: input.staff_count ?? null,
+      });
+
+      if (error) return { error: error.message };
 
       const { error: memberError } = await supabase
         .from("org_memberships")
-        .insert({ org_id: data.id, user_id: user.id, role: "owner" });
+        .insert({ org_id: newId, user_id: user.id, role: "owner" });
 
       if (memberError) return { error: memberError.message };
 
       await refresh();
-      setActiveOrgIdState(data.id);
+      setActiveOrgIdState(newId);
       return { error: null };
     },
     [user, refresh]
