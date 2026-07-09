@@ -15,6 +15,11 @@ export type GrantsGovOpportunity = {
 
 const SEARCH_URL = "https://api.grants.gov/v1/api/search2";
 
+/** Builds a real, clickable link to view this opportunity on Grants.gov. */
+export function grantsGovUrl(externalId: string): string {
+  return `https://www.grants.gov/search-results-detail/${externalId}`;
+}
+
 export async function searchGrantsGov(keyword: string, rows = 25): Promise<GrantsGovOpportunity[]> {
   const res = await fetch(SEARCH_URL, {
     method: "POST",

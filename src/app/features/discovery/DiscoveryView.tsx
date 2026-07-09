@@ -5,6 +5,7 @@ import { MatchScore } from "../../components/common/MatchScore";
 import { TagBadge } from "../../components/common/TagBadge";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
 import { addToPipeline, fetchOrgOpportunities, syncGrantsForOrg } from "../../lib/dataService";
+import { grantsGovUrl } from "../../lib/grants";
 
 type Row = {
   id: string;
@@ -18,6 +19,7 @@ type Row = {
     funder: string;
     deadline: string | null;
     category: string | null;
+    external_id: string | null;
   };
 };
 
@@ -148,7 +150,15 @@ export function DiscoveryView() {
                 <button onClick={() => handleAddToPipeline(row.id)} disabled={added} className={BTN_PRIMARY}>
                   {added ? "In Pipeline ✓" : "Add to Pipeline"}
                 </button>
-                <div className="ml-auto flex items-center gap-1.5 text-sm text-slate-300 hover:text-slate-500 cursor-pointer transition-colors"><ExternalLink className="w-3 h-3" />Grants.gov</div>
+                <div className="ml-auto">
+                  {opp.external_id ? (
+                    <a href={grantsGovUrl(opp.external_id)} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-teal-600 transition-colors">
+                      <ExternalLink className="w-3 h-3" />View on Grants.gov
+                    </a>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-sm text-slate-300"><ExternalLink className="w-3 h-3" />Grants.gov</span>
+                  )}
+                </div>
               </div>
             </div>
           );

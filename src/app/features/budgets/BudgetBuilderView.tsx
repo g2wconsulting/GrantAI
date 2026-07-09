@@ -1,21 +1,93 @@
-import { useState } from "react";
-import { Download, Sparkles } from "lucide-react";
-import { BUDGET_ROWS } from "../../data/demoData";
-import { BTN_PRIMARY, BTN_SECONDARY, CARD } from "../../styles/classNames";
+import { useCallback, useEffect, useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { BTN_PRIMARY, CARD } from "../../styles/classNames";
 import { formatCurrency } from "../../utils/money";
+import { useActiveOrg } from "../../hooks/useActiveOrg";
+import { fetchBudgets } from "../../lib/dataService";
+import { supabase } from "../../lib/supabase";
+
+type BudgetRow = {
+  id: string;
+  category: string;
+  label: string;
+  year1: number;
+  year2: number;
+  year3: number;
+  org_opportunity: { id: string; opportunity: { title: string } } | null;
+};
+
 export function BudgetBuilderView() {
-  const [grant, setGrant] = useState("DOL WIOA Workforce Grant — $750,000");
-
-  const getTotals = (rows: typeof BUDGET_ROWS) => {
-    let y1 = 0, y2 = 0, y3 = 0;
-    rows.forEach(r => r.items.forEach(i => { y1 += i.y1; y2 += i.y2; y3 += i.y3; }));
-    return { y1, y2, y3, total: y1 + y2 + y3 };
-  };
-
-  const direct = getTotals(BUDGET_ROWS);
-  const indirect = { y1: Math.round(direct.y1 * 0.15), y2: Math.round(direct.y2 * 0.15), y3: Math.round(direct.y3 * 0.15) };
-  const totalProject = { y1: direct.y1 + indirect.y1, y2: direct.y2 + indirect.y2, y3: direct.y3 + indirect.y3 };
+  const { org } = useActiveOrg();
+  const [rows, setRows] = useState<BudgetRow[]>([]);
+  const [selectedOppId, setSelectedOppId] = useState<string | "all">("all");
+  const [loading, setLoading] = useState(true);
   const fmt = formatCurrency;
+
+  const load = useCallback(async () => {
+    if (!org) return;
+    setLoading(true);
+    const { data } = await fetchBudgets(org.id);
+    setRows(data as unknown as BudgetRow[]);
+    setLoading(false);
+  }, [org]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const grantOptions = Array.from(
+    new Map(rows.filter((r) => r.org_opportunity).map((r) => [r.org_opportunity!.id, r.org_opportunity!.opportunity.title])).entries()
+  );
+
+  const visibleRows = selectedOppId === "all" ? rows : rows.filter((r) => r.org_opportunity?.id === selectedOppId);
+
+  const grouped = visibleRows.reduce<Record<string, BudgetRow[]>>((acc, r) => {
+    (acc[r.category] ??= []).push(r);
+    return acc;
+  }, {});
+
+  const totals = visibleRows.reduce(
+    (acc, r) => ({ y1: acc.y1 + Number(r.year1), y2: acc.y2 + Number(r.year2), y3: acc.y3 + Number(r.year3) }),
+    { y1: 0, y2: 0, y3: 0 }
+  );
+
+  async function updateCell(id: string, field: "year1" | "year2" | "year3", value: string) {
+    const num = Number(value) || 0;
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: num } : r)));
+    await supabase.from("budgets").update({ [field]: num }).eq("id", id);
+  }
+
+  async function updateLabel(id: string, value: string) {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, label: value } : r)));
+    await supabase.from("budgets").update({ label: value }).eq("id", id);
+  }
+
+  async function addLine() {
+    if (!org) return;
+    const orgOppId = selectedOppId === "all" ? rows[0]?.org_opportunity?.id ?? null : selectedOppId;
+    const { data } = await supabase
+      .from("budgets")
+      .insert({ org_id: org.id, org_opportunity_id: orgOppId, category: "Other", label: "New line item", year1: 0, year2: 0, year3: 0 })
+      .select()
+      .maybeSingle();
+    if (data) await load();
+  }
+
+  async function deleteLine(id: string) {
+    await supabase.from("budgets").delete().eq("id", id);
+    setRows((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  if (loading) return <p className="text-sm text-slate-400 px-1">Loading budgets…</p>;
+
+  if (rows.length === 0) {
+    return (
+      <div className={`${CARD} p-8 text-center`}>
+        <p className="text-slate-600 font-medium">No budgets yet</p>
+        <p className="text-sm text-slate-400 mt-1">A starter budget line is created automatically when you add a grant to your pipeline from Discovery.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -23,17 +95,14 @@ export function BudgetBuilderView() {
         <div className="flex items-center gap-4">
           <div className="flex-1">
             <label className="text-sm text-slate-400 uppercase tracking-wide block mb-1">Grant</label>
-            <select value={grant} onChange={e => setGrant(e.target.value)} className="text-sm font-medium text-slate-800 border border-border rounded-lg px-3 py-2 bg-white outline-none w-full max-w-sm hover:border-teal-300">
-              <option>DOL WIOA Workforce Grant — $750,000</option>
-              <option>MacArthur Foundation — $500,000</option>
-              <option>NSF Convergence — $1,000,000</option>
+            <select value={selectedOppId} onChange={(e) => setSelectedOppId(e.target.value)} className="text-sm font-medium text-slate-800 border border-border rounded-lg px-3 py-2 bg-white outline-none w-full max-w-sm hover:border-teal-300">
+              <option value="all">All grants</option>
+              {grantOptions.map(([id, title]) => (
+                <option key={id} value={id}>{title}</option>
+              ))}
             </select>
           </div>
-          <div className="flex gap-2">
-            <button className={BTN_SECONDARY}><Download className="w-3.5 h-3.5" />Excel</button>
-            <button className={BTN_SECONDARY}><Download className="w-3.5 h-3.5" />SF-424A</button>
-            <button className={BTN_PRIMARY}><Sparkles className="w-3.5 h-3.5" />Generate Narrative</button>
-          </div>
+          <button className={BTN_PRIMARY} onClick={addLine}><Plus className="w-3.5 h-3.5" />Add Line Item</button>
         </div>
       </div>
 
@@ -46,67 +115,51 @@ export function BudgetBuilderView() {
               <th className="text-right px-4 py-3 font-semibold text-slate-600">Year 2</th>
               <th className="text-right px-4 py-3 font-semibold text-slate-600">Year 3</th>
               <th className="text-right px-4 py-3 font-semibold text-slate-600">Total</th>
-              <th className="text-right px-4 py-3 font-semibold text-slate-600">%</th>
+              <th className="px-2 py-3" />
             </tr>
           </thead>
           <tbody>
-            {BUDGET_ROWS.map((row) => (
+            {Object.entries(grouped).map(([category, items]) => (
               <>
-                <tr key={row.category} className="bg-[#f0fdf5]">
-                  <td className="px-4 py-2 font-semibold text-slate-700 text-sm uppercase tracking-wide" colSpan={6}>{row.category}</td>
+                <tr key={category} className="bg-[#f0fdf5]">
+                  <td className="px-4 py-2 font-semibold text-slate-700 text-sm uppercase tracking-wide" colSpan={6}>{category}</td>
                 </tr>
-                {row.items.map((item) => {
-                  const total = item.y1 + item.y2 + item.y3;
-                  const pct = ((total / 750000) * 100).toFixed(1);
+                {items.map((item) => {
+                  const total = Number(item.year1) + Number(item.year2) + Number(item.year3);
                   return (
-                    <tr key={item.label} className="border-t border-border hover:bg-[#f5fdf8]">
-                      <td className="px-4 py-2.5 text-slate-600 pl-7">{item.label}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-700 font-medium">{fmt(item.y1)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-700 font-medium">{fmt(item.y2)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-700 font-medium">{fmt(item.y3)}</td>
+                    <tr key={item.id} className="border-t border-border hover:bg-[#f5fdf8]">
+                      <td className="px-4 py-2.5 pl-7">
+                        <input value={item.label} onChange={(e) => updateLabel(item.id, e.target.value)} className="w-full text-slate-600 bg-transparent outline-none border-b border-transparent focus:border-teal-300" />
+                      </td>
+                      {(["year1", "year2", "year3"] as const).map((f) => (
+                        <td key={f} className="px-4 py-2.5 text-right">
+                          <input
+                            type="number"
+                            value={item[f]}
+                            onChange={(e) => updateCell(item.id, f, e.target.value)}
+                            className="w-24 text-right text-slate-700 font-medium bg-transparent outline-none border-b border-transparent focus:border-teal-300"
+                          />
+                        </td>
+                      ))}
                       <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{fmt(total)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-400">{pct}%</td>
+                      <td className="px-2 py-2.5 text-center">
+                        <button onClick={() => deleteLine(item.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </td>
                     </tr>
                   );
                 })}
               </>
             ))}
             <tr className="border-t-2 border-teal-200 bg-teal-50">
-              <td className="px-4 py-3 font-bold text-teal-800">Total Direct Costs</td>
-              {[direct.y1, direct.y2, direct.y3, direct.y1 + direct.y2 + direct.y3].map((v, i) => <td key={i} className="px-4 py-3 text-right font-bold text-teal-800">{fmt(v)}</td>)}
-              <td className="px-4 py-3 text-right text-teal-600">{((direct.y1 + direct.y2 + direct.y3) / 750000 * 100).toFixed(1)}%</td>
-            </tr>
-            <tr className="border-t border-border">
-              <td className="px-4 py-2.5 text-slate-600 pl-7">Indirect Costs (15% of direct)</td>
-              {[indirect.y1, indirect.y2, indirect.y3, indirect.y1 + indirect.y2 + indirect.y3].map((v, i) => <td key={i} className="px-4 py-2.5 text-right text-slate-700 font-medium">{fmt(v)}</td>)}
-              <td className="px-4 py-2.5 text-right text-slate-400">15.0%</td>
-            </tr>
-            <tr className="border-t-2 border-slate-200 bg-slate-50">
-              <td className="px-4 py-3 font-bold text-slate-800">Total Federal Request</td>
-              {[totalProject.y1, totalProject.y2, totalProject.y3, 750000].map((v, i) => <td key={i} className="px-4 py-3 text-right font-bold text-slate-900">{fmt(v)}</td>)}
-              <td className="px-4 py-3 text-right text-slate-400">100%</td>
-            </tr>
-            <tr className="border-t border-border">
-              <td className="px-4 py-2.5 text-slate-500 pl-7">Match Requirement (20%)</td>
-              <td className="px-4 py-2.5 text-right text-amber-600 font-medium">$60,000</td>
-              <td className="px-4 py-2.5 text-right text-amber-600 font-medium">$62,000</td>
-              <td className="px-4 py-2.5 text-right text-amber-600 font-medium">$28,000</td>
-              <td className="px-4 py-2.5 text-right text-amber-600 font-bold">$150,000</td>
-              <td className="px-4 py-2.5 text-right text-amber-500">20%</td>
+              <td className="px-4 py-3 font-bold text-teal-800">Total</td>
+              {[totals.y1, totals.y2, totals.y3, totals.y1 + totals.y2 + totals.y3].map((v, i) => (
+                <td key={i} className="px-4 py-3 text-right font-bold text-teal-800">{fmt(v)}</td>
+              ))}
+              <td />
             </tr>
           </tbody>
         </table>
       </div>
-
-      <div className={`${CARD} p-5`}>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-slate-900 text-base">Budget Narrative</h3>
-          <button className={BTN_PRIMARY}><Sparkles className="w-3.5 h-3.5" />AI Generate Narrative</button>
-        </div>
-        <textarea className="w-full h-32 text-sm text-slate-700 bg-[#f5fdf8] border border-border rounded-xl p-4 outline-none resize-none leading-relaxed placeholder:text-slate-300 focus:border-teal-300" placeholder="Click 'AI Generate Narrative' to create a complete budget justification, or start writing here. Describe the basis for each cost, how it supports the program, and why it is reasonable and necessary..." />
-      </div>
     </div>
   );
 }
-
-// ─── Reporting ────────────────────────────────────────────────────────────────

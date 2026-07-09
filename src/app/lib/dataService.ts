@@ -77,7 +77,37 @@ export async function syncGrantsForOrg(org: OrgRecord) {
   return { synced: matchRows.length, error: null };
 }
 
-/** Fetch this org's matched opportunities, joined with opportunity details. */
+/** Fetch this org's calendar events. */
+export async function fetchCalendarEvents(orgId: string) {
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .select("*")
+    .eq("org_id", orgId)
+    .order("event_date", { ascending: true });
+
+  return { data: data ?? [], error: error?.message ?? null };
+}
+
+/** Fetch this org's proposals, joined with the opportunity they're tied to. */
+export async function fetchProposals(orgId: string) {
+  const { data, error } = await supabase
+    .from("proposals")
+    .select("*, org_opportunity:org_opportunities(*, opportunity:opportunities(*))")
+    .eq("org_id", orgId)
+    .order("updated_at", { ascending: false });
+
+  return { data: data ?? [], error: error?.message ?? null };
+}
+
+/** Fetch this org's budget line items, joined with the opportunity they're tied to. */
+export async function fetchBudgets(orgId: string) {
+  const { data, error } = await supabase
+    .from("budgets")
+    .select("*, org_opportunity:org_opportunities(*, opportunity:opportunities(*))")
+    .eq("org_id", orgId);
+
+  return { data: data ?? [], error: error?.message ?? null };
+}
 export async function fetchOrgOpportunities(orgId: string) {
   const { data, error } = await supabase
     .from("org_opportunities")

@@ -1,57 +1,115 @@
-import { Plus } from "lucide-react";
-import { KANBAN_COLS, kanbanData } from "../../data/demoData";
+import { useCallback, useEffect, useState } from "react";
+import { ExternalLink, Plus } from "lucide-react";
 import { BTN_PRIMARY, CARD } from "../../styles/classNames";
 import { SectionHeader } from "../../components/common/SectionHeader";
+import { useActiveOrg } from "../../hooks/useActiveOrg";
+import { fetchOrgOpportunities } from "../../lib/dataService";
+import { supabase } from "../../lib/supabase";
+import { grantsGovUrl } from "../../lib/grants";
+
+const COLS = [
+  { id: "researching", label: "Researching", dot: "bg-slate-400" },
+  { id: "qualified", label: "Qualified", dot: "bg-blue-400" },
+  { id: "writing", label: "Writing", dot: "bg-amber-400" },
+  { id: "submitted", label: "Submitted", dot: "bg-purple-400" },
+  { id: "awarded", label: "Awarded", dot: "bg-emerald-400" },
+];
+
+type Row = {
+  id: string;
+  match_score: number;
+  stage: string;
+  opportunity: { id: string; title: string; funder: string; deadline: string | null; external_id: string | null };
+};
+
 export function PipelineView() {
+  const { org } = useActiveOrg();
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (!org) return;
+    setLoading(true);
+    const { data } = await fetchOrgOpportunities(org.id);
+    setRows(data as unknown as Row[]);
+    setLoading(false);
+  }, [org]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function moveStage(rowId: string, stage: string) {
+    setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, stage } : r)));
+    await supabase.from("org_opportunities").update({ stage }).eq("id", rowId);
+  }
+
+  const totalValueLabel = `${rows.length} grants in pipeline`;
+
   return (
     <div>
-      <SectionHeader title="Grant Pipeline" sub="39 total grants · $4.6M total pipeline value" action={
-        <div className="flex items-center gap-2">
-          <div className="flex items-center bg-white border border-border rounded-lg overflow-hidden">
-            <button className="px-3 py-1.5 text-sm text-slate-400 hover:bg-[#edf9f2] border-r border-border transition-colors">List</button>
-            <button className="px-3 py-1.5 text-sm font-medium bg-gradient-to-br from-teal-500 to-blue-500 text-white">Kanban</button>
-            <button className="px-3 py-1.5 text-sm text-slate-400 hover:bg-[#edf9f2] border-l border-border transition-colors">Timeline</button>
-          </div>
-          <button className={BTN_PRIMARY}><Plus className="w-3.5 h-3.5" />Add Grant</button>
+      <SectionHeader
+        title="Grant Pipeline"
+        sub={totalValueLabel}
+        action={<button className={BTN_PRIMARY} onClick={load}><Plus className="w-3.5 h-3.5" />Refresh</button>}
+      />
+
+      {loading && <p className="text-sm text-slate-400 px-1 mb-4">Loading pipeline…</p>}
+
+      {!loading && rows.length === 0 && (
+        <div className={`${CARD} p-8 text-center mb-4`}>
+          <p className="text-slate-600 font-medium">Nothing in your pipeline yet</p>
+          <p className="text-sm text-slate-400 mt-1">Go to Discovery, sync live grants, and click "Add to Pipeline" on ones you want to pursue.</p>
         </div>
-      } />
+      )}
+
       <div className="flex gap-4 overflow-x-auto pb-6">
-        {KANBAN_COLS.map((col) => {
-          const cards = kanbanData[col.id] ?? [];
-          const totals: Record<string, number> = { researching: 460, qualified: 1150, writing: 1500, submitted: 750, awarded: 640 };
+        {COLS.map((col) => {
+          const cards = rows.filter((r) => r.stage === col.id);
           return (
-            <div key={col.id} className="w-60 shrink-0">
+            <div key={col.id} className="w-64 shrink-0">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className={`w-2 h-2 rounded-full ${col.dot}`} />
                   <span className="text-base font-semibold text-slate-700">{col.label}</span>
                   <span className="text-sm text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">{cards.length}</span>
                 </div>
-                <button className="text-slate-300 hover:text-slate-500 transition-colors"><Plus className="w-3.5 h-3.5" /></button>
               </div>
-              <p className="text-sm text-slate-400 mb-3">${totals[col.id]}K total</p>
               <div className="space-y-2.5">
-                {cards.map((card, i) => (
-                  <div key={i} className={`${CARD} p-3.5 hover:shadow-md transition-all cursor-pointer group`}>
-                    <p className="text-base font-semibold text-slate-900 leading-snug mb-2.5 group-hover:text-teal-700 transition-colors">{card.title}</p>
+                {cards.map((card) => (
+                  <div key={card.id} className={`${CARD} p-3.5 hover:shadow-md transition-all group`}>
+                    <p className="text-base font-semibold text-slate-900 leading-snug mb-2.5 group-hover:text-teal-700 transition-colors">{card.opportunity.title}</p>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-base font-bold text-slate-800">{card.amount}</span>
-                      <span className="text-sm text-slate-400">{card.deadline}</span>
+                      <span className="text-sm text-slate-400">{card.opportunity.funder}</span>
+                      {card.opportunity.deadline && <span className="text-sm text-slate-400">{new Date(card.opportunity.deadline).toLocaleDateString()}</span>}
                     </div>
-                    <div>
+                    <div className="mb-2.5">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm text-slate-400">AI Match</span>
-                        <span className="text-sm font-bold text-teal-700">{card.match}%</span>
+                        <span className="text-sm font-bold text-teal-700">{card.match_score}%</span>
                       </div>
                       <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${card.match}%` }} />
+                        <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${card.match_score}%` }} />
                       </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={card.stage}
+                        onChange={(e) => moveStage(card.id, e.target.value)}
+                        className="flex-1 text-sm border border-border rounded-md px-1.5 py-1 outline-none"
+                      >
+                        {COLS.map((c) => (
+                          <option key={c.id} value={c.id}>{c.label}</option>
+                        ))}
+                      </select>
+                      {card.opportunity.external_id && (
+                        <a href={grantsGovUrl(card.opportunity.external_id)} target="_blank" rel="noreferrer" className="text-slate-300 hover:text-teal-600 transition-colors shrink-0">
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
                     </div>
                   </div>
                 ))}
-                <button className="w-full flex items-center justify-center gap-1.5 py-2.5 border border-dashed border-slate-200 rounded-xl text-sm text-slate-400 hover:border-teal-300 hover:text-teal-600 transition-colors">
-                  <Plus className="w-3 h-3" />Add grant
-                </button>
               </div>
             </div>
           );
@@ -60,5 +118,3 @@ export function PipelineView() {
     </div>
   );
 }
-
-// ─── Calendar ─────────────────────────────────────────────────────────────────

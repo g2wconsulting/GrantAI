@@ -73,21 +73,25 @@ export function SettingsView() {
       {tab === "integrations" && (
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
           {[
-            { name: "Grants.gov", desc: "Search and track federal grant opportunities", connected: true, icon: Globe },
-            { name: "SAM.gov", desc: "Federal registrations and eligibility verification", connected: true, icon: Shield },
-            { name: "Google Drive", desc: "Sync documents and proposals automatically", connected: false, icon: FolderOpen },
-            { name: "Salesforce", desc: "Sync partner contacts and grant records", connected: false, icon: Briefcase },
-            { name: "DocuSign", desc: "E-sign MOUs, letters of support, and agreements", connected: false, icon: FileCheck },
-            { name: "Quickbooks", desc: "Connect financial data for budget reporting", connected: false, icon: DollarSign },
-          ].map(({ name, desc, connected, icon: Icon }) => (
+            { name: "Grants.gov", desc: "Live federal grant opportunities, synced from Discovery", connected: true, icon: Globe, action: "view" },
+            { name: "SAM.gov", desc: "Federal registrations and eligibility verification", connected: false, icon: Shield, action: "soon" },
+            { name: "Google Drive", desc: "Sync documents and proposals automatically", connected: false, icon: FolderOpen, action: "soon" },
+            { name: "Salesforce", desc: "Sync partner contacts and grant records", connected: false, icon: Briefcase, action: "soon" },
+            { name: "DocuSign", desc: "E-sign MOUs, letters of support, and agreements", connected: false, icon: FileCheck, action: "soon" },
+            { name: "Quickbooks", desc: "Connect financial data for budget reporting", connected: false, icon: DollarSign, action: "soon" },
+          ].map(({ name, desc, connected, icon: Icon, action }) => (
             <div key={name} className={`${CARD} p-4`}>
               <div className="flex items-start justify-between mb-3">
                 <div className="p-2 bg-[#e8faf0] rounded-lg"><Icon className="w-4 h-4 text-teal-600" /></div>
-                {connected ? <span className="text-sm font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Connected</span> : <span className="text-sm text-slate-400">Not connected</span>}
+                {connected ? <span className="text-sm font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Connected</span> : <span className="text-sm text-slate-400">Coming soon</span>}
               </div>
               <p className="text-base font-semibold text-slate-800 mb-1">{name}</p>
               <p className="text-sm text-slate-400 leading-relaxed mb-3">{desc}</p>
-              <button className={connected ? BTN_SECONDARY : BTN_PRIMARY}>{connected ? "Configure" : "Connect"}</button>
+              {action === "view" ? (
+                <a href="/discovery" className={BTN_SECONDARY}>Go to Discovery</a>
+              ) : (
+                <button disabled className={`${BTN_SECONDARY} opacity-50 cursor-not-allowed`}>Not available yet</button>
+              )}
             </div>
           ))}
         </div>
