@@ -6,6 +6,8 @@ import { TagBadge } from "../../components/common/TagBadge";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
 import { addToPipeline, fetchOrgOpportunities, syncGrantsForOrg } from "../../lib/dataService";
 import { grantsGovUrl } from "../../lib/grants";
+import { FOCUS_OPTIONS } from "../../lib/constants";
+import { supabase } from "../../lib/supabase";
 
 type Row = {
   id: string;
@@ -25,14 +27,20 @@ type Row = {
 };
 
 export function DiscoveryView() {
-  const { org } = useActiveOrg();
+  const { org, refresh } = useActiveOrg();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [aiSearching, setAiSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsProfileInfo, setNeedsProfileInfo] = useState(false);
+  const [profileMission, setProfileMission] = useState("");
+  const [profileFocusAreas, setProfileFocusAreas] = useState<string[]>([]);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const autoTriggered = useRef(false);
+
+  const hasProfileInfo = !!org?.mission?.trim() || (org?.focus_areas?.length ?? 0) > 0;
 
   const load = useCallback(async () => {
     if (!org) return;
@@ -46,6 +54,13 @@ export function DiscoveryView() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (org) {
+      setProfileMission(org.mission ?? "");
+      setProfileFocusAreas(org.focus_areas ?? []);
+    }
+  }, [org?.id]);
 
   async function handleSync() {
     if (!org) return;
@@ -68,12 +83,43 @@ export function DiscoveryView() {
         body: JSON.stringify({ orgId: org.id }),
       });
       const result = await res.json();
-      if (!res.ok) setError(result.error ?? "AI search failed");
+      if (!res.ok) {
+        if (result.error === "needs_profile_info") {
+          setNeedsProfileInfo(true);
+        } else {
+          setError(result.message ?? result.error ?? "AI search failed");
+        }
+      }
     } catch (err) {
       setError(String(err));
     }
     setAiSearching(false);
     await load();
+  }
+
+  function toggleProfileFocus(f: string) {
+    setProfileFocusAreas((prev) => (prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]));
+  }
+
+  async function handleSaveProfileAndSearch() {
+    if (!org) return;
+    if (!profileMission.trim() && profileFocusAreas.length === 0) return;
+    setSavingProfile(true);
+    setError(null);
+    const { error: saveError } = await supabase
+      .from("orgs")
+      .update({ mission: profileMission.trim() || null, focus_areas: profileFocusAreas })
+      .eq("id", org.id);
+    setSavingProfile(false);
+    if (saveError) {
+      setError(saveError.message);
+      return;
+    }
+    await refresh();
+    setNeedsProfileInfo(false);
+    autoTriggered.current = true;
+    void handleSync();
+    void handleAiSearch();
   }
 
   async function handleAddToPipeline(rowId: string) {
@@ -88,14 +134,18 @@ export function DiscoveryView() {
   }
 
   // First time you land here with nothing yet, go ahead and find grants
-  // for you automatically rather than requiring a click.
+  // for you automatically rather than requiring a click — but only once we
+  // know enough about the org to search for something relevant.
   useEffect(() => {
-    if (!loading && rows.length === 0 && !autoTriggered.current && org) {
-      autoTriggered.current = true;
-      void handleSync();
-      void handleAiSearch();
+    if (loading || rows.length !== 0 || autoTriggered.current || !org) return;
+    if (!hasProfileInfo) {
+      setNeedsProfileInfo(true);
+      return;
     }
-  }, [loading, rows.length, org]);
+    autoTriggered.current = true;
+    void handleSync();
+    void handleAiSearch();
+  }, [loading, rows.length, org, hasProfileInfo]);
 
   function daysUntil(dateStr: string | null) {
     if (!dateStr) return null;
@@ -130,13 +180,62 @@ export function DiscoveryView() {
         </div>
       </div>
 
-      {(loading || syncing || aiSearching) && (
+      {needsProfileInfo && (
+        <div className={`${CARD} p-6`}>
+          <div className="flex items-start gap-3">
+            <Sparkles className="w-5 h-5 text-teal-500 mt-0.5 shrink-0" />
+            <div>
+              <h3 className="font-semibold text-slate-900 text-base">Tell us a bit more about your organization</h3>
+              <p className="text-sm text-slate-500 mt-1">
+                To search the web for grants, proposals, and RFPs that actually fit you, we need at least a short mission statement or a few focus areas. This is saved to your org profile and used for every future match.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            <div>
+              <label className="text-sm font-medium text-slate-600">What does your organization do? Who does it serve?</label>
+              <textarea
+                value={profileMission}
+                onChange={(e) => setProfileMission(e.target.value)}
+                rows={3}
+                className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-200"
+                placeholder="e.g. We provide workforce training and job placement for young adults in Chicago."
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-600">Focus areas (pick all that apply)</label>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {FOCUS_OPTIONS.map((f) => (
+                  <button
+                    type="button"
+                    key={f}
+                    onClick={() => toggleProfileFocus(f)}
+                    className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${profileFocusAreas.includes(f) ? "bg-gradient-to-br from-teal-500 to-blue-500 text-white border-transparent" : "bg-white border-border text-slate-600 hover:border-teal-200"}`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button
+              onClick={handleSaveProfileAndSearch}
+              disabled={savingProfile || (!profileMission.trim() && profileFocusAreas.length === 0)}
+              className={`${BTN_PRIMARY} mt-1`}
+            >
+              {savingProfile ? "Saving…" : "Save & Find Grants"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!needsProfileInfo && (loading || syncing || aiSearching) && (
         <p className="text-sm text-slate-400 px-1">
           {syncing || aiSearching ? "Finding grants that match your mission — this runs automatically, no need to click anything…" : "Loading matched grants…"}
         </p>
       )}
 
-      {!loading && !syncing && !aiSearching && rows.length === 0 && (
+      {!needsProfileInfo && !loading && !syncing && !aiSearching && rows.length === 0 && (
         <div className={`${CARD} p-8 text-center`}>
           <Sparkles className="w-6 h-6 text-teal-400 mx-auto mb-2" />
           <p className="text-slate-600 font-medium">No matching grants found yet</p>

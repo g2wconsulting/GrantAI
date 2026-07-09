@@ -43,23 +43,39 @@ export default async function handler(req, res) {
     return;
   }
 
-  const prompt = `You are a grant research assistant. Search the web for CURRENT, REAL, ACTIVE grant funding opportunities that are a strong fit for the following nonprofit organization. Include foundation grants, corporate giving/CSR programs, and state or local government grants — NOT federal Grants.gov listings (those are covered separately).
+  const hasMission = !!org.mission?.trim();
+  const hasFocusAreas = Array.isArray(org.focus_areas) && org.focus_areas.length > 0;
+  if (!hasMission && !hasFocusAreas) {
+    res.status(422).json({
+      error: "needs_profile_info",
+      message: "We need a bit more about your organization before we can search for relevant grants — add a mission statement or a few focus areas.",
+    });
+    return;
+  }
+
+  const isBusiness = /business|startup|for-profit|company|llc|inc\.?$/i.test(org.type ?? "");
+
+  const prompt = `You are a grant and funding-opportunity research assistant. Search the web for CURRENT, REAL, OPEN grant, funding, and RFP opportunities that are a strong fit for the following organization. Include ${
+    isBusiness
+      ? "small business grants, SBIR/STTR and other federal R&D funding, state/local economic development grants, corporate RFPs, and business competitions"
+      : "foundation grants, corporate giving/CSR programs, and state or local government grants"
+  } — NOT the federal Grants.gov feed (that is covered separately).
 
 Organization profile:
 - Name: ${org.name}
-- Type: ${org.type ?? "Nonprofit"}
+- Type: ${org.type ?? (isBusiness ? "Business" : "Nonprofit")}
 - Location: ${org.city ?? "Unknown"}
-- Mission: ${org.mission ?? "Not specified"}
+- Mission / what they do: ${org.mission ?? "Not specified"}
 - Focus areas: ${(org.focus_areas ?? []).join(", ") || "Not specified"}
-- Annual budget size: ${org.budget_size ?? "Not specified"}
+- Annual budget/revenue size: ${org.budget_size ?? "Not specified"}
 
-Find up to 8 real, currently open or upcoming grant opportunities. For each one you must verify it via web search and include the actual source URL you found it at — do not fabricate opportunities or URLs.
+Find up to 6 real, currently open or upcoming opportunities. For each one you must verify it via web search and include the actual source URL you found it at — do not fabricate opportunities or URLs. Work efficiently: a handful of well-targeted searches is better than many broad ones.
 
 Respond with ONLY a JSON array (no markdown fences, no commentary) where each item has exactly this shape:
 {
   "title": string,
   "funder": string,
-  "category": "Foundation" | "Corporate" | "State" | "Local",
+  "category": "Foundation" | "Corporate" | "State" | "Local" | "Federal R&D" | "Business Competition",
   "amount_floor": number | null,
   "amount_ceiling": number | null,
   "deadline": "YYYY-MM-DD" | null,
@@ -82,7 +98,7 @@ Respond with ONLY a JSON array (no markdown fences, no commentary) where each it
         model: "claude-sonnet-5",
         max_tokens: 4000,
         messages: [{ role: "user", content: prompt }],
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
+        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 8 }],
       }),
     });
 
