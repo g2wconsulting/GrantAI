@@ -33,7 +33,7 @@ export function AppLayout() {
             </div>
             <div>
               <p className="text-slate-800 font-bold text-base leading-none tracking-tight">GrantAI</p>
-              <p className="text-slate-600 text-sm mt-0.5 tracking-wide uppercase">AI OS for Nonprofits</p>
+              <p className="text-slate-600 text-sm mt-0.5 tracking-wide uppercase">For Nonprofits</p>
             </div>
           </div>
         </div>

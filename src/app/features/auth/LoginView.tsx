@@ -35,7 +35,7 @@ export function LoginView() {
           </div>
           <div>
             <p className="text-slate-800 font-bold text-base leading-none">GrantAI</p>
-            <p className="text-slate-500 text-sm mt-0.5">AI OS for Nonprofits</p>
+            <p className="text-slate-500 text-sm mt-0.5">For Nonprofits</p>
           </div>
         </div>
 
