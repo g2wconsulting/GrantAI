@@ -38,9 +38,20 @@ export function DiscoveryView() {
   const [profileFocusAreas, setProfileFocusAreas] = useState<string[]>([]);
   const [savingProfile, setSavingProfile] = useState(false);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const [programCount, setProgramCount] = useState<number | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const autoTriggered = useRef(false);
 
   const hasProfileInfo = !!org?.mission?.trim() || (org?.focus_areas?.length ?? 0) > 0;
+
+  useEffect(() => {
+    if (!org) return;
+    supabase
+      .from("org_programs")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", org.id)
+      .then(({ count }) => setProgramCount(count ?? 0));
+  }, [org?.id]);
 
   const load = useCallback(async () => {
     if (!org) return;
@@ -200,6 +211,20 @@ export function DiscoveryView() {
           <span className="ml-auto text-sm text-slate-400">{rows.length} opportunities</span>
         </div>
       </div>
+
+      {!needsProfileInfo && programCount === 0 && !bannerDismissed && (
+        <div className={`${CARD} p-4 flex items-start gap-3`}>
+          <Sparkles className="w-4 h-4 text-teal-500 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-slate-700">Get more, better-matched grants</p>
+            <p className="text-sm text-slate-400 mt-0.5">
+              The AI search is more specific — and finds more opportunities — when it knows about the actual programs you run, not just your mission. Add a few in{" "}
+              <a href="/organizations" className="text-teal-600 hover:underline">Org Profile → Programs</a>.
+            </p>
+          </div>
+          <button onClick={() => setBannerDismissed(true)} className="text-slate-300 hover:text-slate-500 shrink-0"><X className="w-4 h-4" /></button>
+        </div>
+      )}
 
       {needsProfileInfo && (
         <div className={`${CARD} p-6`}>
