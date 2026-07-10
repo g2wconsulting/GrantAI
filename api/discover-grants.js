@@ -17,6 +17,7 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 const NONPROFIT_CATEGORIES = [
   { category: "Foundation", focus: "foundation grants and other private philanthropic funding" },
@@ -47,7 +48,7 @@ Organization profile:
 - Specific programs run:
 ${programLines}
 
-Find up to 3 real, currently open or upcoming opportunities using web search. Do not fabricate opportunities or URLs — only include ones you actually found via search. This runs under a hard ~35-second time limit: search once or twice, then answer immediately with whatever you've found. Do not double-check or re-search — first reasonable results are enough.
+Find up to 3 real, currently open or upcoming opportunities using web search. Do not fabricate opportunities or URLs — only include ones you actually found via search. This runs under a hard ~20-second time limit: search once or twice, then answer immediately with whatever you've found. Do not double-check or re-search — first reasonable results are enough.
 
 Respond with ONLY a JSON array (no markdown fences, no commentary) where each item has exactly this shape:
 {
@@ -65,9 +66,73 @@ Respond with ONLY a JSON array (no markdown fences, no commentary) where each it
 }`;
 }
 
+/** Pulls a JSON array of grants out of free-form model text. Returns null (not []) on failure, so callers can tell "parsed but empty" apart from "couldn't parse at all". */
+function extractGrants(text) {
+  const cleaned = (text ?? "").replace(/```json|```/g, "").trim();
+  const jsonStart = cleaned.indexOf("[");
+  const jsonEnd = cleaned.lastIndexOf("]");
+  if (jsonStart === -1 || jsonEnd === -1) return null;
+  try {
+    return JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Tries OpenAI (gpt-5.6's built-in web_search tool) first — the user has
+ * OpenAI credits to spend here — and falls back to Claude if OpenAI isn't
+ * configured, errors, or times out. Each attempt gets its own short
+ * timeout so the two attempts combined still fit safely inside Vercel's
+ * function limit even in the worst case (OpenAI fails, then Claude runs).
+ */
 async function searchCategory(org, isBusiness, focus, programs) {
+  const prompt = buildPrompt(org, isBusiness, focus, programs);
+
+  if (OPENAI_API_KEY) {
+    const openaiGrants = await searchWithOpenAI(prompt);
+    if (openaiGrants && openaiGrants.length > 0) return openaiGrants;
+  }
+
+  return (await searchWithClaude(prompt)) ?? [];
+}
+
+async function searchWithOpenAI(prompt) {
   const controller = new AbortController();
-  const abortTimer = setTimeout(() => controller.abort(), 35000);
+  const abortTimer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-5.6",
+        tools: [{ type: "web_search" }],
+        search_context_size: "low",
+        input: prompt,
+      }),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const messageItem = (data.output ?? []).find((item) => item.type === "message");
+    const text = messageItem?.content?.[0]?.text;
+    return extractGrants(text);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(abortTimer);
+  }
+}
+
+async function searchWithClaude(prompt) {
+  if (!ANTHROPIC_API_KEY) return null;
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), 20000);
 
   try {
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -83,12 +148,12 @@ async function searchCategory(org, isBusiness, focus, programs) {
         max_tokens: 2000,
         thinking: { type: "disabled" },
         output_config: { effort: "low" },
-        messages: [{ role: "user", content: buildPrompt(org, isBusiness, focus, programs) }],
+        messages: [{ role: "user", content: prompt }],
         tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 3 }],
       }),
     });
 
-    if (!claudeRes.ok) return [];
+    if (!claudeRes.ok) return null;
 
     const claudeData = await claudeRes.json();
     const textBlocks = (claudeData.content ?? [])
@@ -96,16 +161,11 @@ async function searchCategory(org, isBusiness, focus, programs) {
       .map((b) => b.text)
       .join("\n");
 
-    const cleaned = textBlocks.replace(/```json|```/g, "").trim();
-    const jsonStart = cleaned.indexOf("[");
-    const jsonEnd = cleaned.lastIndexOf("]");
-    if (jsonStart === -1 || jsonEnd === -1) return [];
-
-    return JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1));
+    return extractGrants(textBlocks);
   } catch {
     // Timed out or failed — this category just contributes nothing; the
     // other categories running in parallel are unaffected.
-    return [];
+    return null;
   } finally {
     clearTimeout(abortTimer);
   }
