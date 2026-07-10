@@ -7,7 +7,16 @@ import { fetchAwardedGrants, fetchGrantHistory } from "../../lib/dataService";
 
 const FOCUS_OPTIONS = ["Workforce Development", "Education", "Healthcare", "Housing", "Environment", "Arts & Culture", "Youth Services", "Digital Equity / Technology", "Food Security", "Community Development"];
 
-type Program = { id: string; name: string; description: string | null; budget: string | null; people_served: string | null; outcome: string | null };
+type Program = {
+  id: string;
+  name: string;
+  description: string | null;
+  budget: string | null;
+  people_served: string | null;
+  outcome: string | null;
+  target_market: string | null;
+  geographic_reach: string | null;
+};
 type TeamMember = { id: string; name: string; title: string | null; member_type: string; since_year: string | null };
 type HistoryRow = { id: string; name: string; funder: string | null; amount: string | null; period: string | null; status: string };
 
@@ -21,10 +30,10 @@ export function OrganizationProfileView() {
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [awarded, setAwarded] = useState<any[]>([]);
-  const [showProgramForm, setShowProgramForm] = useState(false);
   const [showTeamForm, setShowTeamForm] = useState(false);
   const [showHistoryForm, setShowHistoryForm] = useState(false);
-  const [programForm, setProgramForm] = useState({ name: "", description: "", budget: "", people_served: "", outcome: "" });
+  const [creatingProgram, setCreatingProgram] = useState(false);
+  const [savedProgramField, setSavedProgramField] = useState<string | null>(null);
   const [teamForm, setTeamForm] = useState({ name: "", title: "", member_type: "Staff", since_year: "" });
   const [historyForm, setHistoryForm] = useState({ name: "", funder: "", amount: "", period: "", status: "Awarded" });
 
@@ -67,12 +76,25 @@ export function OrganizationProfileView() {
     saveField("focus_areas", next);
   }
 
-  async function addProgram() {
-    if (!org || !programForm.name.trim()) return;
-    await supabase.from("org_programs").insert({ org_id: org.id, ...programForm });
-    setProgramForm({ name: "", description: "", budget: "", people_served: "", outcome: "" });
-    setShowProgramForm(false);
-    await loadExtras();
+  async function createProgram() {
+    if (!org) return;
+    setCreatingProgram(true);
+    const { data, error } = await supabase
+      .from("org_programs")
+      .insert({ org_id: org.id, name: "New Program" })
+      .select()
+      .single();
+    setCreatingProgram(false);
+    if (error || !data) return;
+    setPrograms((prev) => [...prev, data as Program]);
+  }
+  function updateProgramLocal(id: string, field: keyof Program, value: string) {
+    setPrograms((prev) => prev.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
+  }
+  async function saveProgramField(id: string, field: keyof Program, value: string) {
+    await supabase.from("org_programs").update({ [field]: value }).eq("id", id);
+    setSavedProgramField(`${id}:${field}`);
+    setTimeout(() => setSavedProgramField(null), 1500);
   }
   async function deleteProgram(id: string) {
     await supabase.from("org_programs").delete().eq("id", id);
@@ -157,31 +179,89 @@ export function OrganizationProfileView() {
       )}
 
       {tab === "programs" && (
-        <div className="space-y-3">
-          <div className="flex justify-end"><button className={BTN_PRIMARY} onClick={() => setShowProgramForm(true)}><Plus className="w-3.5 h-3.5" />Add Program</button></div>
-          {showProgramForm && (
-            <div className={`${CARD} p-4 grid grid-cols-2 gap-3`}>
-              <input placeholder="Program name" value={programForm.name} onChange={(e) => setProgramForm({ ...programForm, name: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300 col-span-2" />
-              <textarea placeholder="Description" value={programForm.description} onChange={(e) => setProgramForm({ ...programForm, description: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300 col-span-2 resize-none" rows={2} />
-              <input placeholder="Budget (e.g. $250K)" value={programForm.budget} onChange={(e) => setProgramForm({ ...programForm, budget: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300" />
-              <input placeholder="People served" value={programForm.people_served} onChange={(e) => setProgramForm({ ...programForm, people_served: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300" />
-              <input placeholder="Outcome (e.g. 68% placement)" value={programForm.outcome} onChange={(e) => setProgramForm({ ...programForm, outcome: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300 col-span-2" />
-              <div className="col-span-2 flex gap-2"><button className={BTN_PRIMARY} onClick={addProgram}>Add</button><button className={BTN_SECONDARY} onClick={() => setShowProgramForm(false)}>Cancel</button></div>
-            </div>
-          )}
-          {programs.length === 0 && !showProgramForm && <div className={`${CARD} p-8 text-center`}><p className="text-slate-600 font-medium">No programs added yet</p></div>}
-          <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-400">Every field saves automatically when you click away — nothing to submit.</p>
+            <button className={BTN_PRIMARY} onClick={createProgram} disabled={creatingProgram}><Plus className="w-3.5 h-3.5" />{creatingProgram ? "Adding…" : "Add Program"}</button>
+          </div>
+          {programs.length === 0 && <div className={`${CARD} p-8 text-center`}><p className="text-slate-600 font-medium">No programs added yet</p></div>}
+          <div className="space-y-4">
             {programs.map((p) => (
               <div key={p.id} className={`${CARD} p-5`}>
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-semibold text-slate-900">{p.name}</h3>
-                  <button onClick={() => deleteProgram(p.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <input
+                    value={p.name}
+                    onChange={(e) => updateProgramLocal(p.id, "name", e.target.value)}
+                    onBlur={(e) => saveProgramField(p.id, "name", e.target.value)}
+                    className="font-semibold text-slate-900 text-base flex-1 outline-none border-b border-transparent focus:border-teal-300 bg-transparent"
+                  />
+                  <div className="flex items-center gap-2 shrink-0">
+                    {savedProgramField?.startsWith(`${p.id}:`) && <span className="text-sm text-emerald-600">Saved ✓</span>}
+                    <button onClick={() => deleteProgram(p.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
                 </div>
-                {p.description && <p className="text-sm text-slate-500 leading-relaxed mb-3">{p.description}</p>}
-                <div className="flex flex-wrap gap-4 text-sm text-slate-400">
-                  {p.budget && <span>Budget: <span className="font-semibold text-slate-700">{p.budget}</span></span>}
-                  {p.people_served && <span>Served: <span className="font-semibold text-slate-700">{p.people_served}</span></span>}
-                  {p.outcome && <span>Outcome: <span className="font-semibold text-teal-700">{p.outcome}</span></span>}
+
+                <label className="text-sm text-slate-400 uppercase tracking-wide block mb-1">Description</label>
+                <textarea
+                  value={p.description ?? ""}
+                  onChange={(e) => updateProgramLocal(p.id, "description", e.target.value)}
+                  onBlur={(e) => saveProgramField(p.id, "description", e.target.value)}
+                  placeholder="What does this program do? Who does it serve, and how? This can be as long as you need — paste a full project narrative if you have one."
+                  rows={8}
+                  className="w-full text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300 resize-y mb-3"
+                />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm text-slate-400 uppercase tracking-wide block mb-1">Target Market / Population</label>
+                    <input
+                      value={p.target_market ?? ""}
+                      onChange={(e) => updateProgramLocal(p.id, "target_market", e.target.value)}
+                      onBlur={(e) => saveProgramField(p.id, "target_market", e.target.value)}
+                      placeholder="e.g. Postsecondary students in cybersecurity/IT pathways"
+                      className="w-full text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-slate-400 uppercase tracking-wide block mb-1">Geographic Reach</label>
+                    <input
+                      value={p.geographic_reach ?? ""}
+                      onChange={(e) => updateProgramLocal(p.id, "geographic_reach", e.target.value)}
+                      onBlur={(e) => saveProgramField(p.id, "geographic_reach", e.target.value)}
+                      placeholder="e.g. Statewide Georgia, Metro Atlanta"
+                      className="w-full text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-slate-400 uppercase tracking-wide block mb-1">Budget</label>
+                    <input
+                      value={p.budget ?? ""}
+                      onChange={(e) => updateProgramLocal(p.id, "budget", e.target.value)}
+                      onBlur={(e) => saveProgramField(p.id, "budget", e.target.value)}
+                      placeholder="e.g. $250K"
+                      className="w-full text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-slate-400 uppercase tracking-wide block mb-1">People Served</label>
+                    <input
+                      value={p.people_served ?? ""}
+                      onChange={(e) => updateProgramLocal(p.id, "people_served", e.target.value)}
+                      onBlur={(e) => saveProgramField(p.id, "people_served", e.target.value)}
+                      placeholder="e.g. 200 students/year"
+                      className="w-full text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-sm text-slate-400 uppercase tracking-wide block mb-1">Outcome</label>
+                    <input
+                      value={p.outcome ?? ""}
+                      onChange={(e) => updateProgramLocal(p.id, "outcome", e.target.value)}
+                      onBlur={(e) => saveProgramField(p.id, "outcome", e.target.value)}
+                      placeholder="e.g. 68% job placement within 6 months"
+                      className="w-full text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300"
+                    />
+                  </div>
                 </div>
               </div>
             ))}
