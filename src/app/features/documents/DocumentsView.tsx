@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { FolderOpen, Plus, Search, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Download, FolderOpen, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { BTN_PRIMARY, BTN_SECONDARY, CARD } from "../../styles/classNames";
 import { SectionHeader } from "../../components/common/SectionHeader";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
@@ -7,7 +7,23 @@ import { supabase } from "../../lib/supabase";
 
 const CATEGORIES = ["Compliance", "Financial", "Proposals", "Board", "Other"];
 
-type Doc = { id: string; name: string; category: string | null; tags: string[]; created_at: string };
+type Doc = {
+  id: string;
+  name: string;
+  category: string | null;
+  tags: string[];
+  created_at: string;
+  storage_path: string | null;
+  file_type: string | null;
+  size_bytes: number | null;
+};
+
+function formatBytes(bytes: number | null) {
+  if (!bytes) return null;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export function DocumentsView() {
   const { org } = useActiveOrg();
@@ -16,7 +32,11 @@ export function DocumentsView() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", category: "Compliance", tags: "" });
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     if (!org) return;
@@ -40,21 +60,50 @@ export function DocumentsView() {
   }, {});
 
   async function addDoc() {
-    if (!org || !form.name.trim()) return;
-    await supabase.from("documents").insert({
+    if (!org || !file) return;
+    setUploading(true);
+    setError(null);
+    const path = `${org.id}/documents/${Date.now()}-${file.name}`;
+    const { error: uploadError } = await supabase.storage.from("org-files").upload(path, file);
+    if (uploadError) {
+      setUploading(false);
+      setError(uploadError.message);
+      return;
+    }
+    const { error: insertError } = await supabase.from("documents").insert({
       org_id: org.id,
-      name: form.name,
+      name: form.name.trim() || file.name,
       category: form.category,
       tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
+      storage_path: path,
+      file_type: file.type || null,
+      size_bytes: file.size,
     });
+    setUploading(false);
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
     setForm({ name: "", category: "Compliance", tags: "" });
+    setFile(null);
     setShowAdd(false);
     await load();
   }
 
-  async function deleteDoc(id: string) {
-    await supabase.from("documents").delete().eq("id", id);
-    setDocs((prev) => prev.filter((d) => d.id !== id));
+  async function downloadDoc(doc: Doc) {
+    if (!doc.storage_path) return;
+    const { data, error: signError } = await supabase.storage.from("org-files").createSignedUrl(doc.storage_path, 60);
+    if (signError || !data?.signedUrl) {
+      setError(signError?.message ?? "Could not generate a download link");
+      return;
+    }
+    window.open(data.signedUrl, "_blank");
+  }
+
+  async function deleteDoc(doc: Doc) {
+    if (doc.storage_path) await supabase.storage.from("org-files").remove([doc.storage_path]);
+    await supabase.from("documents").delete().eq("id", doc.id);
+    setDocs((prev) => prev.filter((d) => d.id !== doc.id));
   }
 
   return (
@@ -66,18 +115,38 @@ export function DocumentsView() {
       {showAdd && (
         <div className={`${CARD} p-4`}>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-slate-800">New Document</h3>
-            <button onClick={() => setShowAdd(false)} className="text-slate-300 hover:text-slate-500"><X className="w-4 h-4" /></button>
+            <h3 className="font-semibold text-slate-800">Upload a Document</h3>
+            <button onClick={() => { setShowAdd(false); setFile(null); }} className="text-slate-300 hover:text-slate-500"><X className="w-4 h-4" /></button>
           </div>
-          <p className="text-sm text-slate-400 mb-3">This tracks document metadata — file storage/upload is coming soon. For now, record what you have and where.</p>
-          <div className="grid grid-cols-3 gap-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+              setFile(f);
+              if (f && !form.name.trim()) setForm((prev) => ({ ...prev, name: f.name }));
+            }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className={`w-full border-2 border-dashed rounded-lg py-6 flex flex-col items-center gap-1.5 transition-colors ${file ? "border-teal-300 bg-[#f0fbf5]" : "border-border hover:border-teal-200"}`}
+          >
+            <Upload className="w-5 h-5 text-teal-500" />
+            <span className="text-sm font-medium text-slate-700">{file ? file.name : "Click to choose a file"}</span>
+            {file && <span className="text-sm text-slate-400">{formatBytes(file.size)}</span>}
+          </button>
+          <div className="grid grid-cols-3 gap-3 mt-3">
             <input placeholder="Document name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300 col-span-2" />
             <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300">
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
             <input placeholder="Tags (comma separated)" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300 col-span-3" />
           </div>
-          <button className={`${BTN_PRIMARY} mt-3`} onClick={addDoc}><Plus className="w-3.5 h-3.5" />Add</button>
+          {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+          <button className={`${BTN_PRIMARY} mt-3`} onClick={addDoc} disabled={!file || uploading}>
+            <Plus className="w-3.5 h-3.5" />{uploading ? "Uploading…" : "Upload"}
+          </button>
         </div>
       )}
 
@@ -123,7 +192,10 @@ export function DocumentsView() {
                     <div className="w-10 h-10 rounded-xl bg-[#e8faf0] flex items-center justify-center shrink-0 text-sm font-bold text-teal-700">{doc.category?.slice(0, 2).toUpperCase() ?? "DO"}</div>
                     <div className="flex-1 min-w-0">
                       <p className="text-base font-semibold text-slate-800 leading-snug truncate">{doc.name}</p>
-                      <p className="text-sm text-slate-400 mt-0.5">{new Date(doc.created_at).toLocaleDateString()}</p>
+                      <p className="text-sm text-slate-400 mt-0.5">
+                        {new Date(doc.created_at).toLocaleDateString()}
+                        {doc.size_bytes ? ` · ${formatBytes(doc.size_bytes)}` : ""}
+                      </p>
                       {doc.tags?.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-2">
                           {doc.tags.map((t) => <span key={t} className="text-sm bg-[#e8faf0] text-teal-700 px-1.5 py-0.5 rounded">{t}</span>)}
@@ -132,7 +204,10 @@ export function DocumentsView() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => deleteDoc(doc.id)} className={`${BTN_SECONDARY} text-sm py-1`}><Trash2 className="w-3 h-3" />Remove</button>
+                    {doc.storage_path && (
+                      <button onClick={() => downloadDoc(doc)} className={`${BTN_SECONDARY} text-sm py-1`}><Download className="w-3 h-3" />Download</button>
+                    )}
+                    <button onClick={() => deleteDoc(doc)} className={`${BTN_SECONDARY} text-sm py-1`}><Trash2 className="w-3 h-3" />Remove</button>
                   </div>
                 </div>
               ))}

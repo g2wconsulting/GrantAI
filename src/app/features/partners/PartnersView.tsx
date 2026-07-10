@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { MoreHorizontal, Plus, UserPlus, X } from "lucide-react";
+import { ExternalLink, MoreHorizontal, Plus, UserPlus, X } from "lucide-react";
 import { BTN_PRIMARY, BTN_SECONDARY, CARD } from "../../styles/classNames";
 import { SectionHeader } from "../../components/common/SectionHeader";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
 import { supabase } from "../../lib/supabase";
+import { fetchOrgOpportunities } from "../../lib/dataService";
 
 const STAGE_COLORS: Record<string, string> = {
   Prospect: "bg-slate-100 text-slate-500",
@@ -12,23 +13,45 @@ const STAGE_COLORS: Record<string, string> = {
   Formalized: "bg-teal-50 text-teal-700",
 };
 
-type Partner = { id: string; name: string; type: string; role: string; stage: string; contact: string | null; last_contact: string | null };
+type Partner = {
+  id: string;
+  name: string;
+  type: string;
+  role: string;
+  stage: string;
+  contact: string | null;
+  last_contact: string | null;
+  link: string | null;
+  org_opportunity_id: string | null;
+};
+
+type ProjectOption = { id: string; title: string };
 
 export function PartnersView() {
   const { org } = useActiveOrg();
   const [filter, setFilter] = useState("All");
   const [partners, setPartners] = useState<Partner[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: "", type: "University", role: "", contact: "" });
+  const [form, setForm] = useState({ name: "", type: "University", role: "", contact: "", link: "", orgOpportunityId: "" });
 
   const types = ["All", "University", "Government", "Funder", "Workforce Agency", "Corporate"];
 
   const load = useCallback(async () => {
     if (!org) return;
     setLoading(true);
-    const { data } = await supabase.from("partners").select("*").eq("org_id", org.id).order("name");
-    setPartners((data as Partner[]) ?? []);
+    const [{ data: partnerRows }, { data: oppRows }] = await Promise.all([
+      supabase.from("partners").select("*").eq("org_id", org.id).order("name"),
+      fetchOrgOpportunities(org.id),
+    ]);
+    setPartners((partnerRows as Partner[]) ?? []);
+    setProjects(
+      ((oppRows ?? []) as unknown as { id: string; opportunity: { title: string } }[]).map((r) => ({
+        id: r.id,
+        title: r.opportunity?.title ?? "Untitled Grant",
+      }))
+    );
     setLoading(false);
   }, [org]);
 
@@ -38,6 +61,11 @@ export function PartnersView() {
 
   const filtered = filter === "All" ? partners : partners.filter((p) => p.type === filter);
 
+  function projectTitle(orgOpportunityId: string | null) {
+    if (!orgOpportunityId) return null;
+    return projects.find((p) => p.id === orgOpportunityId)?.title ?? null;
+  }
+
   async function addPartner() {
     if (!org || !form.name.trim()) return;
     await supabase.from("partners").insert({
@@ -46,9 +74,11 @@ export function PartnersView() {
       type: form.type,
       role: form.role,
       contact: form.contact,
+      link: form.link.trim() || null,
+      org_opportunity_id: form.orgOpportunityId || null,
       stage: "Prospect",
     });
-    setForm({ name: "", type: "University", role: "", contact: "" });
+    setForm({ name: "", type: "University", role: "", contact: "", link: "", orgOpportunityId: "" });
     setShowAdd(false);
     await load();
   }
@@ -75,6 +105,11 @@ export function PartnersView() {
             </select>
             <input placeholder="Role (e.g. Fiscal Sponsor)" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300" />
             <input placeholder="Contact name/email" value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300" />
+            <input placeholder="Website or profile link" value={form.link} onChange={(e) => setForm({ ...form, link: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300" />
+            <select value={form.orgOpportunityId} onChange={(e) => setForm({ ...form, orgOpportunityId: e.target.value })} className="text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300">
+              <option value="">Not tied to a project</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+            </select>
           </div>
           <button className={`${BTN_PRIMARY} mt-3`} onClick={addPartner}><Plus className="w-3.5 h-3.5" />Add Partner</button>
         </div>
@@ -98,16 +133,24 @@ export function PartnersView() {
       {partners.length > 0 && (
         <div className={`${CARD} overflow-hidden`}>
           <table className="w-full">
-            <thead><tr className="bg-[#f5fdf8]">{["Partner", "Type", "Role", "Stage", "Last Contact", ""].map(h => <th key={h} className="text-left px-4 py-2.5 text-sm font-semibold text-slate-500 uppercase tracking-wide">{h}</th>)}</tr></thead>
+            <thead><tr className="bg-[#f5fdf8]">{["Partner", "Type", "Role", "Project", "Stage", "Last Contact", ""].map(h => <th key={h} className="text-left px-4 py-2.5 text-sm font-semibold text-slate-500 uppercase tracking-wide">{h}</th>)}</tr></thead>
             <tbody>
               {filtered.map((p) => (
                 <tr key={p.id} className="border-t border-border hover:bg-[#f5fdf8] transition-colors">
                   <td className="px-4 py-3">
-                    <p className="text-base font-semibold text-slate-800">{p.name}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-base font-semibold text-slate-800">{p.name}</p>
+                      {p.link && (
+                        <a href={p.link} target="_blank" rel="noreferrer" className="text-slate-300 hover:text-teal-600 transition-colors" title={p.link}>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
                     {p.contact && <p className="text-sm text-slate-400">{p.contact}</p>}
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-500">{p.type}</td>
                   <td className="px-4 py-3 text-sm text-slate-600">{p.role || "—"}</td>
+                  <td className="px-4 py-3 text-sm text-slate-600">{projectTitle(p.org_opportunity_id) ?? "—"}</td>
                   <td className="px-4 py-3"><span className={`text-sm font-medium px-2 py-0.5 rounded-full ${STAGE_COLORS[p.stage] ?? STAGE_COLORS.Prospect}`}>{p.stage}</span></td>
                   <td className="px-4 py-3 text-sm text-slate-400">{p.last_contact ? new Date(p.last_contact).toLocaleDateString() : "—"}</td>
                   <td className="px-4 py-3">

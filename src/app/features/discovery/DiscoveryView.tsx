@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Calendar, ExternalLink, RefreshCw, Search, Sparkles } from "lucide-react";
+import { Calendar, ExternalLink, RefreshCw, Search, Sparkles, X } from "lucide-react";
 import { BTN_PRIMARY, BTN_SECONDARY, CARD } from "../../styles/classNames";
 import { MatchScore } from "../../components/common/MatchScore";
 import { TagBadge } from "../../components/common/TagBadge";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
-import { addToPipeline, fetchOrgOpportunities, syncGrantsForOrg } from "../../lib/dataService";
+import { addToPipeline, dismissOpportunity, fetchOrgOpportunities, syncGrantsForOrg } from "../../lib/dataService";
 import { grantsGovUrl } from "../../lib/grants";
 import { FOCUS_OPTIONS } from "../../lib/constants";
 import { supabase } from "../../lib/supabase";
@@ -47,7 +47,7 @@ export function DiscoveryView() {
     setLoading(true);
     const { data, error } = await fetchOrgOpportunities(org.id);
     if (error) setError(error);
-    else setRows(data as unknown as Row[]);
+    else setRows((data as unknown as Row[]).filter((r) => r.stage !== "declined"));
     setLoading(false);
   }, [org]);
 
@@ -82,7 +82,19 @@ export function DiscoveryView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orgId: org.id }),
       });
-      const result = await res.json();
+      let result: { error?: string; message?: string } = {};
+      try {
+        result = await res.json();
+      } catch {
+        setError(
+          res.status === 504
+            ? "The search took too long and timed out on the server — try again in a moment."
+            : `The search server returned an unexpected response (status ${res.status}). Try again in a moment.`
+        );
+        setAiSearching(false);
+        await load();
+        return;
+      }
       if (!res.ok) {
         if (result.error === "needs_profile_info") {
           setNeedsProfileInfo(true);
@@ -90,8 +102,8 @@ export function DiscoveryView() {
           setError(result.message ?? result.error ?? "AI search failed");
         }
       }
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      setError("Couldn't reach the search service — check your connection and try again.");
     }
     setAiSearching(false);
     await load();
@@ -131,6 +143,15 @@ export function DiscoveryView() {
     }
     setAddedIds((prev) => new Set(prev).add(rowId));
     await load();
+  }
+
+  async function handleDismiss(rowId: string) {
+    const result = await dismissOpportunity(rowId);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setRows((prev) => prev.filter((r) => r.id !== rowId));
   }
 
   // First time you land here with nothing yet, go ahead and find grants
@@ -288,6 +309,9 @@ export function DiscoveryView() {
               <div className="flex items-center gap-2 mt-4 pt-3 border-t border-border">
                 <button onClick={() => handleAddToPipeline(row.id)} disabled={added} className={BTN_PRIMARY}>
                   {added ? "In Pipeline ✓" : "Add to Pipeline"}
+                </button>
+                <button onClick={() => handleDismiss(row.id)} disabled={added} className={BTN_SECONDARY}>
+                  <X className="w-3.5 h-3.5" />Dismiss
                 </button>
                 <div className="ml-auto">
                   {opp.source_url ? (

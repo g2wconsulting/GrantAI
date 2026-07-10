@@ -69,7 +69,7 @@ Organization profile:
 - Focus areas: ${(org.focus_areas ?? []).join(", ") || "Not specified"}
 - Annual budget/revenue size: ${org.budget_size ?? "Not specified"}
 
-Find up to 6 real, currently open or upcoming opportunities. Search the web to find candidates, then FETCH each candidate's actual page to confirm it is still open, read the real deadline and eligibility rules, and pull an accurate description — do not rely on search snippets alone, and do not fabricate opportunities or URLs. Work efficiently: a handful of well-targeted searches plus fetches is better than many broad ones.
+Find up to 5 real, currently open or upcoming opportunities. Search the web to find candidates, then fetch a candidate's actual page when you need to confirm it's still open or pin down the real deadline/eligibility — don't fetch every single one if the search results are already clear. Do not fabricate opportunities or URLs. This runs under a hard time limit, so work efficiently: a handful of well-targeted searches plus a few confirming fetches beats broad, exhaustive research.
 
 Respond with ONLY a JSON array (no markdown fences, no commentary) where each item has exactly this shape:
 {
@@ -89,15 +89,16 @@ Respond with ONLY a JSON array (no markdown fences, no commentary) where each it
   try {
     const messages = [{ role: "user", content: prompt }];
     const tools = [
-      { type: "web_search_20260209", name: "web_search", max_uses: 8 },
-      { type: "web_fetch_20260209", name: "web_fetch", max_uses: 8 },
+      { type: "web_search_20260209", name: "web_search", max_uses: 6 },
+      { type: "web_fetch_20260209", name: "web_fetch", max_uses: 4 },
     ];
 
     let claudeData;
     // Searching AND fetching pages can exceed Anthropic's default 10-iteration
     // server-tool loop, which pauses the turn (stop_reason: "pause_turn")
-    // rather than erroring. Resume by re-sending the conversation so far.
-    for (let round = 0; round < 4; round++) {
+    // rather than erroring. Resume by re-sending the conversation so far, but
+    // cap rounds tightly — this function has a hard ~60s wall-clock budget.
+    for (let round = 0; round < 2; round++) {
       const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {

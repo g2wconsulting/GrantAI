@@ -128,6 +128,12 @@ export async function removeFromPipeline(orgOpportunityId: string) {
   return { error: error?.message ?? null };
 }
 
+/** Dismisses a Discovery match without adding it to the pipeline. */
+export async function dismissOpportunity(orgOpportunityId: string) {
+  const { error } = await supabase.from("org_opportunities").update({ stage: "declined" }).eq("id", orgOpportunityId);
+  return { error: error?.message ?? null };
+}
+
 /** Updates the pipeline stage for an opportunity (e.g. researching -> qualified). */
 export async function updatePipelineStage(orgOpportunityId: string, stage: string) {
   const { error } = await supabase.from("org_opportunities").update({ stage }).eq("id", orgOpportunityId);
