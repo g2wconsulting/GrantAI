@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Calendar, ExternalLink, RefreshCw, Search, Sparkles } from "lucide-react";
+import { Calendar, ExternalLink, RefreshCw, Search, Sparkles, X } from "lucide-react";
 import { BTN_PRIMARY, BTN_SECONDARY, CARD } from "../../styles/classNames";
 import { MatchScore } from "../../components/common/MatchScore";
 import { TagBadge } from "../../components/common/TagBadge";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
-import { addToPipeline, fetchOrgOpportunities, syncGrantsForOrg } from "../../lib/dataService";
+import { addToPipeline, dismissOpportunity, fetchOrgOpportunities, syncGrantsForOrg } from "../../lib/dataService";
 import { grantsGovUrl } from "../../lib/grants";
 import { FOCUS_OPTIONS } from "../../lib/constants";
 import { supabase } from "../../lib/supabase";
@@ -47,7 +47,7 @@ export function DiscoveryView() {
     setLoading(true);
     const { data, error } = await fetchOrgOpportunities(org.id);
     if (error) setError(error);
-    else setRows(data as unknown as Row[]);
+    else setRows((data as unknown as Row[]).filter((r) => r.stage !== "declined"));
     setLoading(false);
   }, [org]);
 
@@ -131,6 +131,15 @@ export function DiscoveryView() {
     }
     setAddedIds((prev) => new Set(prev).add(rowId));
     await load();
+  }
+
+  async function handleDismiss(rowId: string) {
+    const result = await dismissOpportunity(rowId);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setRows((prev) => prev.filter((r) => r.id !== rowId));
   }
 
   // First time you land here with nothing yet, go ahead and find grants
@@ -288,6 +297,9 @@ export function DiscoveryView() {
               <div className="flex items-center gap-2 mt-4 pt-3 border-t border-border">
                 <button onClick={() => handleAddToPipeline(row.id)} disabled={added} className={BTN_PRIMARY}>
                   {added ? "In Pipeline ✓" : "Add to Pipeline"}
+                </button>
+                <button onClick={() => handleDismiss(row.id)} disabled={added} className={BTN_SECONDARY}>
+                  <X className="w-3.5 h-3.5" />Dismiss
                 </button>
                 <div className="ml-auto">
                   {opp.source_url ? (
