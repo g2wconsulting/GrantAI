@@ -69,7 +69,7 @@ Organization profile:
 - Focus areas: ${(org.focus_areas ?? []).join(", ") || "Not specified"}
 - Annual budget/revenue size: ${org.budget_size ?? "Not specified"}
 
-Find up to 5 real, currently open or upcoming opportunities. Search the web to find candidates, then fetch a candidate's actual page when you need to confirm it's still open or pin down the real deadline/eligibility — don't fetch every single one if the search results are already clear. Do not fabricate opportunities or URLs. This runs under a hard time limit, so work efficiently: a handful of well-targeted searches plus a few confirming fetches beats broad, exhaustive research.
+Find up to 4 real, currently open or upcoming opportunities using web search. Do not fabricate opportunities or URLs — only include ones you actually found via search. This runs under a hard ~50-second time limit, so work fast: a few well-targeted searches and a direct answer, not exhaustive research. Do not spend time double-checking each result — reasonable confidence from the search results is enough.
 
 Respond with ONLY a JSON array (no markdown fences, no commentary) where each item has exactly this shape:
 {
@@ -88,16 +88,17 @@ Respond with ONLY a JSON array (no markdown fences, no commentary) where each it
 
   try {
     const messages = [{ role: "user", content: prompt }];
-    const tools = [
-      { type: "web_search_20260209", name: "web_search", max_uses: 6 },
-      { type: "web_fetch_20260209", name: "web_fetch", max_uses: 4 },
-    ];
+    // web_fetch (opening each candidate's page to double-check it) was
+    // pushing total latency past Vercel's function timeout (confirmed via
+    // X-Vercel-Error: FUNCTION_INVOCATION_TIMEOUT / 504) — search only, and
+    // fewer of them, so this reliably finishes inside the time limit.
+    const tools = [{ type: "web_search_20260209", name: "web_search", max_uses: 4 }];
 
     let claudeData;
-    // Searching AND fetching pages can exceed Anthropic's default 10-iteration
+    // A long search can still exceed Anthropic's default 10-iteration
     // server-tool loop, which pauses the turn (stop_reason: "pause_turn")
-    // rather than erroring. Resume by re-sending the conversation so far, but
-    // cap rounds tightly — this function has a hard ~60s wall-clock budget.
+    // rather than erroring. Resume once by re-sending the conversation so
+    // far — this should rarely trigger now given the smaller tool budget.
     for (let round = 0; round < 2; round++) {
       const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -108,7 +109,8 @@ Respond with ONLY a JSON array (no markdown fences, no commentary) where each it
         },
         body: JSON.stringify({
           model: "claude-sonnet-5",
-          max_tokens: 6000,
+          max_tokens: 4000,
+          output_config: { effort: "low" },
           messages,
           tools,
         }),
