@@ -82,7 +82,19 @@ export function DiscoveryView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orgId: org.id }),
       });
-      const result = await res.json();
+      let result: { error?: string; message?: string } = {};
+      try {
+        result = await res.json();
+      } catch {
+        setError(
+          res.status === 504
+            ? "The search took too long and timed out on the server — try again in a moment."
+            : `The search server returned an unexpected response (status ${res.status}). Try again in a moment.`
+        );
+        setAiSearching(false);
+        await load();
+        return;
+      }
       if (!res.ok) {
         if (result.error === "needs_profile_info") {
           setNeedsProfileInfo(true);
@@ -90,8 +102,8 @@ export function DiscoveryView() {
           setError(result.message ?? result.error ?? "AI search failed");
         }
       }
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      setError("Couldn't reach the search service — check your connection and try again.");
     }
     setAiSearching(false);
     await load();
