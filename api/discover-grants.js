@@ -43,23 +43,39 @@ export default async function handler(req, res) {
     return;
   }
 
-  const prompt = `You are a grant research assistant. Search the web for CURRENT, REAL, ACTIVE grant funding opportunities that are a strong fit for the following nonprofit organization. Include foundation grants, corporate giving/CSR programs, and state or local government grants — NOT federal Grants.gov listings (those are covered separately).
+  const hasMission = !!org.mission?.trim();
+  const hasFocusAreas = Array.isArray(org.focus_areas) && org.focus_areas.length > 0;
+  if (!hasMission && !hasFocusAreas) {
+    res.status(422).json({
+      error: "needs_profile_info",
+      message: "We need a bit more about your organization before we can search for relevant grants — add a mission statement or a few focus areas.",
+    });
+    return;
+  }
+
+  const isBusiness = /business|startup|for-profit|company|llc|inc\.?$/i.test(org.type ?? "");
+
+  const prompt = `You are a grant and funding-opportunity research assistant. Search the web for CURRENT, REAL, OPEN grant, funding, and RFP opportunities that are a strong fit for the following organization. Include ${
+    isBusiness
+      ? "small business grants, SBIR/STTR and other federal R&D funding, state/local economic development grants, corporate RFPs, and business competitions"
+      : "foundation grants, corporate giving/CSR programs, and state or local government grants"
+  } — NOT the federal Grants.gov feed (that is covered separately).
 
 Organization profile:
 - Name: ${org.name}
-- Type: ${org.type ?? "Nonprofit"}
+- Type: ${org.type ?? (isBusiness ? "Business" : "Nonprofit")}
 - Location: ${org.city ?? "Unknown"}
-- Mission: ${org.mission ?? "Not specified"}
+- Mission / what they do: ${org.mission ?? "Not specified"}
 - Focus areas: ${(org.focus_areas ?? []).join(", ") || "Not specified"}
-- Annual budget size: ${org.budget_size ?? "Not specified"}
+- Annual budget/revenue size: ${org.budget_size ?? "Not specified"}
 
-Find up to 8 real, currently open or upcoming grant opportunities. For each one you must verify it via web search and include the actual source URL you found it at — do not fabricate opportunities or URLs.
+Find up to 6 real, currently open or upcoming opportunities. Search the web to find candidates, then FETCH each candidate's actual page to confirm it is still open, read the real deadline and eligibility rules, and pull an accurate description — do not rely on search snippets alone, and do not fabricate opportunities or URLs. Work efficiently: a handful of well-targeted searches plus fetches is better than many broad ones.
 
 Respond with ONLY a JSON array (no markdown fences, no commentary) where each item has exactly this shape:
 {
   "title": string,
   "funder": string,
-  "category": "Foundation" | "Corporate" | "State" | "Local",
+  "category": "Foundation" | "Corporate" | "State" | "Local" | "Federal R&D" | "Business Competition",
   "amount_floor": number | null,
   "amount_ceiling": number | null,
   "deadline": "YYYY-MM-DD" | null,
@@ -71,28 +87,44 @@ Respond with ONLY a JSON array (no markdown fences, no commentary) where each it
 }`;
 
   try {
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 4000,
-        messages: [{ role: "user", content: prompt }],
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
-      }),
-    });
+    const messages = [{ role: "user", content: prompt }];
+    const tools = [
+      { type: "web_search_20260209", name: "web_search", max_uses: 8 },
+      { type: "web_fetch_20260209", name: "web_fetch", max_uses: 8 },
+    ];
 
-    if (!claudeRes.ok) {
-      const text = await claudeRes.text();
-      res.status(502).json({ error: `Claude API error: ${claudeRes.status} ${text}` });
-      return;
+    let claudeData;
+    // Searching AND fetching pages can exceed Anthropic's default 10-iteration
+    // server-tool loop, which pauses the turn (stop_reason: "pause_turn")
+    // rather than erroring. Resume by re-sending the conversation so far.
+    for (let round = 0; round < 4; round++) {
+      const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-5",
+          max_tokens: 6000,
+          messages,
+          tools,
+        }),
+      });
+
+      if (!claudeRes.ok) {
+        const text = await claudeRes.text();
+        res.status(502).json({ error: `Claude API error: ${claudeRes.status} ${text}` });
+        return;
+      }
+
+      claudeData = await claudeRes.json();
+      if (claudeData.stop_reason !== "pause_turn") break;
+
+      messages.push({ role: "assistant", content: claudeData.content });
     }
 
-    const claudeData = await claudeRes.json();
     const textBlocks = (claudeData.content ?? [])
       .filter((b) => b.type === "text")
       .map((b) => b.text)

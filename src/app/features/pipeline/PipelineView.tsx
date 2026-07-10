@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, Plus } from "lucide-react";
+import { ExternalLink, Plus, Trash2 } from "lucide-react";
 import { BTN_PRIMARY, CARD } from "../../styles/classNames";
 import { SectionHeader } from "../../components/common/SectionHeader";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
-import { fetchOrgOpportunities } from "../../lib/dataService";
-import { supabase } from "../../lib/supabase";
+import { fetchOrgOpportunities, removeFromPipeline, updatePipelineStage } from "../../lib/dataService";
 import { grantsGovUrl } from "../../lib/grants";
 
 const COLS = [
@@ -26,6 +25,7 @@ export function PipelineView() {
   const { org } = useActiveOrg();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!org) return;
@@ -40,8 +40,25 @@ export function PipelineView() {
   }, [load]);
 
   async function moveStage(rowId: string, stage: string) {
+    const prevRows = rows;
     setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, stage } : r)));
-    await supabase.from("org_opportunities").update({ stage }).eq("id", rowId);
+    const { error } = await updatePipelineStage(rowId, stage);
+    if (error) {
+      setRows(prevRows);
+      setError(error);
+    }
+  }
+
+  async function handleRemove(rowId: string, title: string) {
+    if (!window.confirm(`Remove "${title}" from your pipeline? This also deletes its draft proposal, budget lines, and calendar deadlines.`)) return;
+    setError(null);
+    const prevRows = rows;
+    setRows((prev) => prev.filter((r) => r.id !== rowId));
+    const { error } = await removeFromPipeline(rowId);
+    if (error) {
+      setRows(prevRows);
+      setError(error);
+    }
   }
 
   const totalValueLabel = `${rows.length} grants in pipeline`;
@@ -53,6 +70,8 @@ export function PipelineView() {
         sub={totalValueLabel}
         action={<button className={BTN_PRIMARY} onClick={load}><Plus className="w-3.5 h-3.5" />Refresh</button>}
       />
+
+      {error && <p className="text-sm text-red-600 px-1 mb-4">{error}</p>}
 
       {loading && <p className="text-sm text-slate-400 px-1 mb-4">Loading pipeline…</p>}
 
@@ -78,7 +97,16 @@ export function PipelineView() {
               <div className="space-y-2.5">
                 {cards.map((card) => (
                   <div key={card.id} className={`${CARD} p-3.5 hover:shadow-md transition-all group`}>
-                    <p className="text-base font-semibold text-slate-900 leading-snug mb-2.5 group-hover:text-teal-700 transition-colors">{card.opportunity.title}</p>
+                    <div className="flex items-start justify-between gap-2 mb-2.5">
+                      <p className="text-base font-semibold text-slate-900 leading-snug group-hover:text-teal-700 transition-colors">{card.opportunity.title}</p>
+                      <button
+                        onClick={() => handleRemove(card.id, card.opportunity.title)}
+                        className="text-slate-300 hover:text-red-500 transition-colors shrink-0 p-0.5"
+                        title="Remove from pipeline"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm text-slate-400">{card.opportunity.funder}</span>
                       {card.opportunity.deadline && <span className="text-sm text-slate-400">{new Date(card.opportunity.deadline).toLocaleDateString()}</span>}
