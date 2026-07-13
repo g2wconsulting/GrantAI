@@ -58,7 +58,7 @@ export function OnboardingView() {
             <Sparkles className="w-4 h-4 text-white" />
           </div>
           <div className="flex-1">
-            <p className="text-slate-800 font-bold text-base leading-none">GrantAI</p>
+            <p className="text-slate-800 font-bold text-base leading-none">Owlfred</p>
             <p className="text-slate-500 text-sm mt-0.5">Set up your organization</p>
           </div>
           <div className="text-right">

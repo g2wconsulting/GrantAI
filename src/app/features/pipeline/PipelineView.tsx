@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, Plus } from "lucide-react";
-import { BTN_PRIMARY, CARD } from "../../styles/classNames";
+import { Check, ExternalLink, Pencil, Plus, Trash2, X } from "lucide-react";
+import { BTN_PRIMARY, BTN_SECONDARY, CARD } from "../../styles/classNames";
 import { SectionHeader } from "../../components/common/SectionHeader";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
 import { fetchOrgOpportunities } from "../../lib/dataService";
@@ -26,6 +26,9 @@ export function PipelineView() {
   const { org } = useActiveOrg();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ title: "", funder: "", deadline: "" });
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!org) return;
@@ -42,6 +45,30 @@ export function PipelineView() {
   async function moveStage(rowId: string, stage: string) {
     setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, stage } : r)));
     await supabase.from("org_opportunities").update({ stage }).eq("id", rowId);
+  }
+
+  function startEdit(row: Row) {
+    setEditingId(row.id);
+    setEditForm({
+      title: row.opportunity.title,
+      funder: row.opportunity.funder,
+      deadline: row.opportunity.deadline ?? "",
+    });
+  }
+
+  async function saveEdit(row: Row) {
+    await supabase
+      .from("opportunities")
+      .update({ title: editForm.title, funder: editForm.funder, deadline: editForm.deadline || null })
+      .eq("id", row.opportunity.id);
+    setEditingId(null);
+    await load();
+  }
+
+  async function deleteFromPipeline(rowId: string) {
+    await supabase.from("org_opportunities").delete().eq("id", rowId);
+    setRows((prev) => prev.filter((r) => r.id !== rowId));
+    setConfirmDeleteId(null);
   }
 
   const totalValueLabel = `${rows.length} grants in pipeline`;
@@ -78,11 +105,26 @@ export function PipelineView() {
               <div className="space-y-2.5">
                 {cards.map((card) => (
                   <div key={card.id} className={`${CARD} p-3.5 hover:shadow-md transition-all group`}>
-                    <p className="text-base font-semibold text-slate-900 leading-snug mb-2.5 group-hover:text-teal-700 transition-colors">{card.opportunity.title}</p>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-slate-400">{card.opportunity.funder}</span>
-                      {card.opportunity.deadline && <span className="text-sm text-slate-400">{new Date(card.opportunity.deadline).toLocaleDateString()}</span>}
-                    </div>
+                    {editingId === card.id ? (
+                      <div className="space-y-2 mb-2.5">
+                        <input value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} className="w-full text-sm font-semibold border border-teal-300 rounded-md px-2 py-1 outline-none" placeholder="Title" />
+                        <input value={editForm.funder} onChange={(e) => setEditForm({ ...editForm, funder: e.target.value })} className="w-full text-sm border border-border rounded-md px-2 py-1 outline-none" placeholder="Funder" />
+                        <input type="date" value={editForm.deadline} onChange={(e) => setEditForm({ ...editForm, deadline: e.target.value })} className="w-full text-sm border border-border rounded-md px-2 py-1 outline-none" />
+                        <div className="flex gap-1.5">
+                          <button onClick={() => saveEdit(card)} className={`${BTN_PRIMARY} text-sm flex-1 justify-center py-1`}><Check className="w-3 h-3" />Save</button>
+                          <button onClick={() => setEditingId(null)} className={`${BTN_SECONDARY} text-sm py-1`}><X className="w-3 h-3" /></button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-base font-semibold text-slate-900 leading-snug mb-2.5 group-hover:text-teal-700 transition-colors">{card.opportunity.title}</p>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm text-slate-400">{card.opportunity.funder}</span>
+                          {card.opportunity.deadline && <span className="text-sm text-slate-400">{new Date(card.opportunity.deadline).toLocaleDateString()}</span>}
+                        </div>
+                      </>
+                    )}
+
                     <div className="mb-2.5">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm text-slate-400">AI Match</span>
@@ -92,7 +134,8 @@ export function PipelineView() {
                         <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${card.match_score}%` }} />
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+
+                    <div className="flex items-center gap-1.5">
                       <select
                         value={card.stage}
                         onChange={(e) => moveStage(card.id, e.target.value)}
@@ -102,10 +145,19 @@ export function PipelineView() {
                           <option key={c.id} value={c.id}>{c.label}</option>
                         ))}
                       </select>
-                      {card.opportunity.external_id && (
+                      {card.opportunity.external_id && !card.opportunity.external_id.startsWith("manual:") && (
                         <a href={grantsGovUrl(card.opportunity.external_id)} target="_blank" rel="noreferrer" className="text-slate-300 hover:text-teal-600 transition-colors shrink-0">
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
+                      )}
+                      <button onClick={() => startEdit(card)} className="text-slate-300 hover:text-teal-600 transition-colors shrink-0"><Pencil className="w-3.5 h-3.5" /></button>
+                      {confirmDeleteId === card.id ? (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={() => deleteFromPipeline(card.id)} className="text-red-500 hover:text-red-700"><Check className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => setConfirmDeleteId(null)} className="text-slate-300 hover:text-slate-500"><X className="w-3.5 h-3.5" /></button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setConfirmDeleteId(card.id)} className="text-slate-300 hover:text-red-500 transition-colors shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
                       )}
                     </div>
                   </div>

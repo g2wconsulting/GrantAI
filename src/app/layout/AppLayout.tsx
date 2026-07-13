@@ -53,8 +53,8 @@ export function AppLayout() {
               <Sparkles className="w-4 h-4 text-white" />
             </div>
             <div>
-              <p className="text-slate-800 font-bold text-base leading-none tracking-tight">GrantAI</p>
-              <p className="text-slate-600 text-sm mt-0.5 tracking-wide uppercase">For Nonprofits</p>
+              <p className="text-slate-800 font-bold text-base leading-none tracking-tight">Owlfred</p>
+              <p className="text-slate-600 text-sm mt-0.5 tracking-wide uppercase">Your AI Grant Partner.</p>
             </div>
           </div>
         </div>

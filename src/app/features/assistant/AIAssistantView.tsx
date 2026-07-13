@@ -42,7 +42,7 @@ export function AIAssistantView() {
           <Sparkles className="w-4 h-4 text-white" />
         </div>
         <div>
-          <p className="text-base font-semibold text-slate-800">GrantAI Assistant</p>
+          <p className="text-base font-semibold text-slate-800">Owlfred Assistant</p>
           <p className="text-sm text-teal-600">Full context on {orgName} · Real-time intelligence</p>
         </div>
         <div className="ml-auto flex items-center gap-1.5"><div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" /><span className="text-sm text-teal-500">Online</span></div>
