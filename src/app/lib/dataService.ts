@@ -119,6 +119,28 @@ export async function fetchOrgOpportunities(orgId: string) {
 }
 
 /**
+ * Removes an opportunity from the pipeline entirely. The DB cascades this
+ * delete to its linked proposal, budget lines, calendar deadlines, and
+ * reports (all reference org_opportunity_id with ON DELETE CASCADE).
+ */
+export async function removeFromPipeline(orgOpportunityId: string) {
+  const { error } = await supabase.from("org_opportunities").delete().eq("id", orgOpportunityId);
+  return { error: error?.message ?? null };
+}
+
+/** Dismisses a Discovery match without adding it to the pipeline. */
+export async function dismissOpportunity(orgOpportunityId: string) {
+  const { error } = await supabase.from("org_opportunities").update({ stage: "declined" }).eq("id", orgOpportunityId);
+  return { error: error?.message ?? null };
+}
+
+/** Updates the pipeline stage for an opportunity (e.g. researching -> qualified). */
+export async function updatePipelineStage(orgOpportunityId: string, stage: string) {
+  const { error } = await supabase.from("org_opportunities").update({ stage }).eq("id", orgOpportunityId);
+  return { error: error?.message ?? null };
+}
+
+/**
  * Moves an opportunity into the pipeline and auto-populates the linked
  * proposal, budget skeleton, and calendar deadline — this is the
  * "auto-populate other menu items" behavior.

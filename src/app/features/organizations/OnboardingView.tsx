@@ -3,19 +3,7 @@ import { Sparkles } from "lucide-react";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
 import { useAuth } from "../../context/AuthContext";
 import { BTN_PRIMARY } from "../../styles/classNames";
-
-const FOCUS_OPTIONS = [
-  "Workforce Development",
-  "Education",
-  "Healthcare",
-  "Housing",
-  "Environment",
-  "Arts & Culture",
-  "Youth Services",
-  "Digital Equity / Technology",
-  "Food Security",
-  "Community Development",
-];
+import { FOCUS_OPTIONS } from "../../lib/constants";
 
 export function OnboardingView() {
   const { createOrg } = useActiveOrg();
@@ -83,7 +71,7 @@ export function OnboardingView() {
             <div>
               <label className="text-sm font-medium text-slate-600">Organization type</label>
               <select value={type} onChange={(e) => setType(e.target.value)} className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-200">
-                {["Community Nonprofit", "EdTech Nonprofit", "Workforce Nonprofit", "Health Nonprofit", "Environmental Nonprofit", "Arts Nonprofit", "Other"].map((t) => (
+                {["Community Nonprofit", "EdTech Nonprofit", "Workforce Nonprofit", "Health Nonprofit", "Environmental Nonprofit", "Arts Nonprofit", "For-Profit Business / Startup", "Other"].map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>

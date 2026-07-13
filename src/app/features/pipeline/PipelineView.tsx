@@ -3,7 +3,7 @@ import { Check, ExternalLink, Pencil, Plus, Trash2, X } from "lucide-react";
 import { BTN_PRIMARY, BTN_SECONDARY, CARD } from "../../styles/classNames";
 import { SectionHeader } from "../../components/common/SectionHeader";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
-import { fetchOrgOpportunities } from "../../lib/dataService";
+import { fetchOrgOpportunities, removeFromPipeline, updatePipelineStage } from "../../lib/dataService";
 import { supabase } from "../../lib/supabase";
 import { grantsGovUrl } from "../../lib/grants";
 
@@ -26,9 +26,9 @@ export function PipelineView() {
   const { org } = useActiveOrg();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ title: "", funder: "", deadline: "" });
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!org) return;
@@ -43,8 +43,25 @@ export function PipelineView() {
   }, [load]);
 
   async function moveStage(rowId: string, stage: string) {
+    const prevRows = rows;
     setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, stage } : r)));
-    await supabase.from("org_opportunities").update({ stage }).eq("id", rowId);
+    const { error } = await updatePipelineStage(rowId, stage);
+    if (error) {
+      setRows(prevRows);
+      setError(error);
+    }
+  }
+
+  async function handleRemove(rowId: string, title: string) {
+    if (!window.confirm(`Remove "${title}" from your pipeline? This also deletes its draft proposal, budget lines, and calendar deadlines.`)) return;
+    setError(null);
+    const prevRows = rows;
+    setRows((prev) => prev.filter((r) => r.id !== rowId));
+    const { error } = await removeFromPipeline(rowId);
+    if (error) {
+      setRows(prevRows);
+      setError(error);
+    }
   }
 
   function startEdit(row: Row) {
@@ -65,12 +82,6 @@ export function PipelineView() {
     await load();
   }
 
-  async function deleteFromPipeline(rowId: string) {
-    await supabase.from("org_opportunities").delete().eq("id", rowId);
-    setRows((prev) => prev.filter((r) => r.id !== rowId));
-    setConfirmDeleteId(null);
-  }
-
   const totalValueLabel = `${rows.length} grants in pipeline`;
 
   return (
@@ -80,6 +91,8 @@ export function PipelineView() {
         sub={totalValueLabel}
         action={<button className={BTN_PRIMARY} onClick={load}><Plus className="w-3.5 h-3.5" />Refresh</button>}
       />
+
+      {error && <p className="text-sm text-red-600 px-1 mb-4">{error}</p>}
 
       {loading && <p className="text-sm text-slate-400 px-1 mb-4">Loading pipeline…</p>}
 
@@ -116,13 +129,23 @@ export function PipelineView() {
                         </div>
                       </div>
                     ) : (
-                      <>
-                        <p className="text-base font-semibold text-slate-900 leading-snug mb-2.5 group-hover:text-teal-700 transition-colors">{card.opportunity.title}</p>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm text-slate-400">{card.opportunity.funder}</span>
-                          {card.opportunity.deadline && <span className="text-sm text-slate-400">{new Date(card.opportunity.deadline).toLocaleDateString()}</span>}
-                        </div>
-                      </>
+                      <div className="flex items-start justify-between gap-2 mb-2.5">
+                        <p className="text-base font-semibold text-slate-900 leading-snug group-hover:text-teal-700 transition-colors">{card.opportunity.title}</p>
+                        <button
+                          onClick={() => handleRemove(card.id, card.opportunity.title)}
+                          className="text-slate-300 hover:text-red-500 transition-colors shrink-0 p-0.5"
+                          title="Remove from pipeline"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    {editingId !== card.id && (
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-slate-400">{card.opportunity.funder}</span>
+                        {card.opportunity.deadline && <span className="text-sm text-slate-400">{new Date(card.opportunity.deadline).toLocaleDateString()}</span>}
+                      </div>
                     )}
 
                     <div className="mb-2.5">
@@ -151,14 +174,6 @@ export function PipelineView() {
                         </a>
                       )}
                       <button onClick={() => startEdit(card)} className="text-slate-300 hover:text-teal-600 transition-colors shrink-0"><Pencil className="w-3.5 h-3.5" /></button>
-                      {confirmDeleteId === card.id ? (
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button onClick={() => deleteFromPipeline(card.id)} className="text-red-500 hover:text-red-700"><Check className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => setConfirmDeleteId(null)} className="text-slate-300 hover:text-slate-500"><X className="w-3.5 h-3.5" /></button>
-                        </div>
-                      ) : (
-                        <button onClick={() => setConfirmDeleteId(card.id)} className="text-slate-300 hover:text-red-500 transition-colors shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
-                      )}
                     </div>
                   </div>
                 ))}
