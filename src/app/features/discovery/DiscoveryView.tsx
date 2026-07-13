@@ -4,7 +4,7 @@ import { BTN_PRIMARY, BTN_SECONDARY, CARD } from "../../styles/classNames";
 import { MatchScore } from "../../components/common/MatchScore";
 import { TagBadge } from "../../components/common/TagBadge";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
-import { addToPipeline, dismissOpportunity, fetchOrgOpportunities, syncGrantsForOrg } from "../../lib/dataService";
+import { addToPipeline, dismissOpportunity, fetchOrgOpportunities } from "../../lib/dataService";
 import { grantsGovUrl } from "../../lib/grants";
 import { FOCUS_OPTIONS } from "../../lib/constants";
 import { supabase } from "../../lib/supabase";
@@ -77,8 +77,17 @@ export function DiscoveryView() {
     if (!org) return;
     setSyncing(true);
     setError(null);
-    const result = await syncGrantsForOrg(org);
-    if (result.error) setError(result.error);
+    try {
+      const res = await fetch("/api/sync-grants-gov", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orgId: org.id }),
+      });
+      const result = await res.json();
+      if (!res.ok || result.error) setError(result.error ?? "Grants.gov sync failed");
+    } catch (err) {
+      setError(String(err));
+    }
     setSyncing(false);
     await load();
   }

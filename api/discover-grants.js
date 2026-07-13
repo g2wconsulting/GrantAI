@@ -116,13 +116,20 @@ async function searchWithOpenAI(prompt) {
       }),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("OpenAI search failed:", res.status, errText);
+      return null;
+    }
 
     const data = await res.json();
     const messageItem = (data.output ?? []).find((item) => item.type === "message");
     const text = messageItem?.content?.[0]?.text;
-    return extractGrants(text);
-  } catch {
+    const grants = extractGrants(text);
+    if (grants === null) console.error("Could not parse OpenAI response as grant JSON:", text?.slice(0, 300));
+    return grants;
+  } catch (err) {
+    console.error("OpenAI search threw:", err);
     return null;
   } finally {
     clearTimeout(abortTimer);
@@ -146,14 +153,16 @@ async function searchWithClaude(prompt) {
       body: JSON.stringify({
         model: "claude-sonnet-5",
         max_tokens: 2000,
-        thinking: { type: "disabled" },
-        output_config: { effort: "low" },
         messages: [{ role: "user", content: prompt }],
-        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 3 }],
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
       }),
     });
 
-    if (!claudeRes.ok) return null;
+    if (!claudeRes.ok) {
+      const errText = await claudeRes.text();
+      console.error("Claude search failed:", claudeRes.status, errText);
+      return null;
+    }
 
     const claudeData = await claudeRes.json();
     const textBlocks = (claudeData.content ?? [])
@@ -161,10 +170,11 @@ async function searchWithClaude(prompt) {
       .map((b) => b.text)
       .join("\n");
 
-    return extractGrants(textBlocks);
-  } catch {
-    // Timed out or failed — this category just contributes nothing; the
-    // other categories running in parallel are unaffected.
+    const grants = extractGrants(textBlocks);
+    if (grants === null) console.error("Could not parse Claude response as grant JSON:", textBlocks?.slice(0, 300));
+    return grants;
+  } catch (err) {
+    console.error("Claude search threw:", err);
     return null;
   } finally {
     clearTimeout(abortTimer);
