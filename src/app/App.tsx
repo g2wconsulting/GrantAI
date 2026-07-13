@@ -13,6 +13,9 @@ import { DiscoveryView } from "./features/discovery/DiscoveryView";
 import { RecommendationsView } from "./features/discovery/RecommendationsView";
 import { DocumentsView } from "./features/documents/DocumentsView";
 import { OrganizationProfileView } from "./features/organizations/OrganizationProfileView";
+import { CertificationsView } from "./features/certifications/CertificationsView";
+import { HubView } from "./features/hub/HubView";
+import { ResourceLibraryView } from "./features/resources/ResourceLibraryView";
 import { PartnersView } from "./features/partners/PartnersView";
 import { PipelineView } from "./features/pipeline/PipelineView";
 import { ProposalBuilderView } from "./features/proposals/ProposalBuilderView";
@@ -63,6 +66,9 @@ function OrgGate() {
         <Route path="calendar" element={<CalendarView />} />
         <Route path="proposals" element={<ProposalBuilderView />} />
         <Route path="organizations" element={<OrganizationProfileView />} />
+        <Route path="certifications" element={<CertificationsView />} />
+        <Route path="hub" element={<HubView />} />
+        <Route path="resources" element={<ResourceLibraryView />} />
         <Route path="profile" element={<Navigate to="/organizations" replace />} />
         <Route path="partners" element={<PartnersView />} />
         <Route path="documents" element={<DocumentsView />} />
