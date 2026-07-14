@@ -13,6 +13,7 @@ export type OrgRecord = {
   uei: string | null;
   mission: string | null;
   focus_areas: string[];
+  search_keywords: string[];
   budget_size: string | null;
   staff_count: number | null;
   readiness: number;

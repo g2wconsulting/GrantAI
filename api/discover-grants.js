@@ -42,18 +42,21 @@ function buildCategories(org, isBusiness) {
   if (isBusiness) return BUSINESS_CATEGORIES;
 
   const focusAreas = Array.isArray(org.focus_areas) && org.focus_areas.length > 0 ? org.focus_areas : null;
-  if (!focusAreas) return NONPROFIT_FALLBACK_CATEGORIES;
+  const customKeywords = Array.isArray(org.search_keywords) ? org.search_keywords.filter(Boolean) : [];
+
+  if (!focusAreas && customKeywords.length === 0) return NONPROFIT_FALLBACK_CATEGORIES;
 
   const sourceTypes = ["foundation and private philanthropic grants", "corporate giving/CSR programs", "state and local government grants and RFPs"];
   const categories = [];
-  // Cross each focus area with each funding-source type, but cap the total
-  // so this still fits comfortably in one request cycle.
-  for (const area of focusAreas.slice(0, 3)) {
+  const allTopics = [...(focusAreas ?? []).slice(0, 2), ...customKeywords.slice(0, 3)];
+  // Cross each topic (focus area or custom keyword) with each funding-source
+  // type, but cap the total so this still fits comfortably in one request cycle.
+  for (const topic of allTopics) {
     for (const source of sourceTypes) {
-      categories.push({ category: area, focus: `${source} specifically for ${area.toLowerCase()} work` });
+      categories.push({ category: topic, focus: `${source} specifically for ${topic.toLowerCase()} work` });
     }
   }
-  return categories.slice(0, 9);
+  return categories.length > 0 ? categories.slice(0, 12) : NONPROFIT_FALLBACK_CATEGORIES;
 }
 
 function buildPrompt(org, isBusiness, focus, programs) {
@@ -73,7 +76,7 @@ Organization profile:
 - Specific programs run:
 ${programLines}
 
-Find up to 6 real, currently open or upcoming opportunities using web search. Do not fabricate opportunities or URLs — only include ones you actually found via search. This runs under a hard ~45-second time limit: search a couple of times, then answer with whatever you've found. Do not over-verify — first reasonable results are enough.
+Find up to 6 real, currently open or upcoming opportunities using web search. Do not fabricate opportunities or URLs — only include ones you actually found via search. Check the deadline/close date you find for each one — if it has clearly already passed, skip it and find a different one instead; only include it anyway if you cannot determine a deadline at all. This runs under a hard ~45-second time limit: search a couple of times, then answer with whatever you've found. Do not over-verify — first reasonable results are enough.
 
 Respond with ONLY a JSON array (no markdown fences, no commentary) where each item has exactly this shape:
 {

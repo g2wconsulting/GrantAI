@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Briefcase, MapPin, Plus, Trash2 } from "lucide-react";
+import { Briefcase, MapPin, Plus, Trash2, X } from "lucide-react";
 import { BTN_PRIMARY, BTN_SECONDARY, CARD } from "../../styles/classNames";
 import { useActiveOrg } from "../../hooks/useActiveOrg";
 import { supabase } from "../../lib/supabase";
@@ -10,6 +10,49 @@ const FOCUS_OPTIONS = ["Workforce Development", "Education", "Healthcare", "Hous
 type Program = { id: string; name: string; description: string | null; budget: string | null; people_served: string | null; outcome: string | null };
 type TeamMember = { id: string; name: string; title: string | null; member_type: string; since_year: string | null };
 type HistoryRow = { id: string; name: string; funder: string | null; amount: string | null; period: string | null; status: string };
+
+function KeywordEditor({ keywords, onChange }: { keywords: string[]; onChange: (next: string[]) => void }) {
+  const [input, setInput] = useState("");
+
+  function addKeyword() {
+    const val = input.trim();
+    if (!val || keywords.includes(val)) return;
+    onChange([...keywords, val]);
+    setInput("");
+  }
+
+  return (
+    <div>
+      <div className="flex gap-2 mb-2">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addKeyword();
+            }
+          }}
+          placeholder="Type a keyword and press Enter..."
+          className="flex-1 text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-teal-300"
+        />
+        <button type="button" onClick={addKeyword} className={BTN_SECONDARY}><Plus className="w-3.5 h-3.5" />Add</button>
+      </div>
+      {keywords.length === 0 ? (
+        <p className="text-sm text-slate-300">No custom keywords added yet.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {keywords.map((k) => (
+            <span key={k} className="inline-flex items-center gap-1 text-sm bg-[#e8faf0] text-teal-700 px-2.5 py-1 rounded-full">
+              {k}
+              <button type="button" onClick={() => onChange(keywords.filter((x) => x !== k))} className="hover:text-teal-900"><X className="w-3 h-3" /></button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function OrganizationProfileView() {
   const { org, refresh } = useActiveOrg();
@@ -153,6 +196,14 @@ export function OrganizationProfileView() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {tab === "overview" && (
+        <div className={`${CARD} p-5`}>
+          <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-1">Custom Search Keywords</h3>
+          <p className="text-sm text-slate-400 mb-3">Cast a broader or more specific net for grant discovery — add anything not covered by the focus areas above (e.g. "veteran services", "rural broadband", "arts education").</p>
+          <KeywordEditor keywords={form?.search_keywords ?? []} onChange={(next) => { setForm({ ...form!, search_keywords: next }); saveField("search_keywords", next); }} />
         </div>
       )}
 

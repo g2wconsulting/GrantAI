@@ -15,6 +15,7 @@ type Row = {
   match_reasons: string[];
   win_prob: number;
   stage: string;
+  saved: boolean;
   opportunity: {
     id: string;
     title: string;
@@ -38,6 +39,8 @@ export function DiscoveryView() {
   const [profileFocusAreas, setProfileFocusAreas] = useState<string[]>([]);
   const [savingProfile, setSavingProfile] = useState(false);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const [view, setView] = useState<"new" | "saved">("new");
+  const [showExpired, setShowExpired] = useState(false);
   const [programCount, setProgramCount] = useState<number | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const autoTriggered = useRef(false);
@@ -174,11 +177,29 @@ export function DiscoveryView() {
     setRows((prev) => prev.filter((r) => r.id !== rowId));
   }
 
+  async function handleSaveForLater(rowId: string) {
+    const { error } = await supabase.from("org_opportunities").update({ saved: true }).eq("id", rowId);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, saved: true } : r)));
+  }
+
+  async function handleUnsave(rowId: string) {
+    const { error } = await supabase.from("org_opportunities").update({ saved: false }).eq("id", rowId);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, saved: false } : r)));
+  }
+
   // First time you land here with nothing yet, go ahead and find grants
   // for you automatically rather than requiring a click — but only once we
   // know enough about the org to search for something relevant.
   useEffect(() => {
-    if (loading || rows.length !== 0 || autoTriggered.current || !org) return;
+    if (loading || rows.filter((r) => !r.saved).length !== 0 || autoTriggered.current || !org) return;
     if (!hasProfileInfo) {
       setNeedsProfileInfo(true);
       return;
@@ -186,7 +207,7 @@ export function DiscoveryView() {
     autoTriggered.current = true;
     void handleSync();
     void handleAiSearch();
-  }, [loading, rows.length, org, hasProfileInfo]);
+  }, [loading, rows, org, hasProfileInfo]);
 
   function daysUntil(dateStr: string | null) {
     if (!dateStr) return null;
@@ -194,6 +215,18 @@ export function DiscoveryView() {
     const now = new Date();
     return Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   }
+
+  const isExpired = (deadline: string | null) => !!deadline && new Date(deadline) < new Date(new Date().toDateString());
+
+  const visibleRows = rows
+    .filter((r) => (view === "saved" ? r.saved : !r.saved))
+    .filter((r) => showExpired || !isExpired(r.opportunity.deadline));
+
+  const expiredHiddenCount = rows
+    .filter((r) => (view === "saved" ? r.saved : !r.saved))
+    .filter((r) => isExpired(r.opportunity.deadline)).length;
+
+  const savedCount = rows.filter((r) => r.saved).length;
 
   return (
     <div className="space-y-4">
@@ -217,8 +250,20 @@ export function DiscoveryView() {
           <span className="text-sm text-slate-400">
             Grants.gov (federal) + AI web search (foundations, corporate, state/local), matched against: {org?.focus_areas?.join(", ") || "your org profile"}
           </span>
-          <span className="ml-auto text-sm text-slate-400">{rows.length} opportunities</span>
+          <span className="ml-auto text-sm text-slate-400">{visibleRows.length} shown</span>
         </div>
+      </div>
+
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-1 bg-white border border-border rounded-xl p-1 w-fit">
+          <button onClick={() => setView("new")} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${view === "new" ? "bg-gradient-to-br from-teal-500 to-blue-500 text-white" : "text-slate-500 hover:text-slate-800"}`}>New</button>
+          <button onClick={() => setView("saved")} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${view === "saved" ? "bg-gradient-to-br from-teal-500 to-blue-500 text-white" : "text-slate-500 hover:text-slate-800"}`}>Saved for Later {savedCount > 0 ? `(${savedCount})` : ""}</button>
+        </div>
+        {expiredHiddenCount > 0 && (
+          <button onClick={() => setShowExpired((v) => !v)} className="text-sm text-slate-400 hover:text-slate-600">
+            {showExpired ? "Hide" : "Show"} {expiredHiddenCount} expired
+          </button>
+        )}
       </div>
 
       {!needsProfileInfo && programCount === 0 && !bannerDismissed && (
@@ -290,16 +335,20 @@ export function DiscoveryView() {
         </p>
       )}
 
-      {!needsProfileInfo && !loading && !syncing && !aiSearching && rows.length === 0 && (
+      {!needsProfileInfo && !loading && !syncing && !aiSearching && visibleRows.length === 0 && (
         <div className={`${CARD} p-8 text-center`}>
           <Sparkles className="w-6 h-6 text-teal-400 mx-auto mb-2" />
-          <p className="text-slate-600 font-medium">No matching grants found yet</p>
-          <p className="text-sm text-slate-400 mt-1">We searched Grants.gov and the web based on your org profile. Try updating your mission/focus areas in Settings for better matches, then click Sync again.</p>
+          <p className="text-slate-600 font-medium">{view === "saved" ? "Nothing saved for later yet" : "No matching grants found yet"}</p>
+          <p className="text-sm text-slate-400 mt-1">
+            {view === "saved"
+              ? "Click \"Save for Later\" on a grant in the New tab to keep it here without adding it to your active pipeline yet."
+              : "We searched Grants.gov and the web based on your org profile. Try updating your mission/focus areas in Settings for better matches, then click Sync again."}
+          </p>
         </div>
       )}
 
       <div className="space-y-3">
-        {rows.map((row) => {
+        {visibleRows.map((row) => {
           const opp = row.opportunity;
           const days = daysUntil(opp.deadline);
           const urgent = days !== null && days <= 7;
@@ -344,9 +393,22 @@ export function DiscoveryView() {
                 <button onClick={() => handleAddToPipeline(row.id)} disabled={added} className={BTN_PRIMARY}>
                   {added ? "In Pipeline ✓" : "Add to Pipeline"}
                 </button>
-                <button onClick={() => handleDismiss(row.id)} disabled={added} className={BTN_SECONDARY}>
-                  <X className="w-3.5 h-3.5" />Dismiss
-                </button>
+                {view === "new" ? (
+                  <>
+                    <button onClick={() => handleDismiss(row.id)} className={BTN_SECONDARY}>
+                      <X className="w-3.5 h-3.5" />Dismiss
+                    </button>
+                    {!added && (
+                      <button onClick={() => handleSaveForLater(row.id)} className={BTN_SECONDARY}>
+                        Save for Later
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <button onClick={() => handleUnsave(row.id)} className={BTN_SECONDARY}>
+                    Move back to New
+                  </button>
+                )}
                 <div className="ml-auto">
                   {opp.source_url ? (
                     <a href={opp.source_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-teal-600 transition-colors">
