@@ -411,13 +411,13 @@ export function DiscoveryView() {
                 )}
                 <div className="ml-auto">
                   {opp.source_url ? (
-                    <a href={opp.source_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-teal-600 transition-colors">
+                    <button type="button" onClick={() => window.open(opp.source_url!, "_blank", "noopener,noreferrer")} className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-teal-600 transition-colors">
                       <ExternalLink className="w-3 h-3" />View Source
-                    </a>
+                    </button>
                   ) : opp.external_id ? (
-                    <a href={grantsGovUrl(opp.external_id)} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-teal-600 transition-colors">
+                    <button type="button" onClick={() => window.open(grantsGovUrl(opp.external_id!), "_blank", "noopener,noreferrer")} className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-teal-600 transition-colors">
                       <ExternalLink className="w-3 h-3" />View on Grants.gov
-                    </a>
+                    </button>
                   ) : (
                     <span className="flex items-center gap-1.5 text-sm text-slate-300"><ExternalLink className="w-3 h-3" />No link available</span>
                   )}

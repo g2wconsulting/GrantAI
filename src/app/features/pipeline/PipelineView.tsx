@@ -169,9 +169,9 @@ export function PipelineView() {
                         ))}
                       </select>
                       {card.opportunity.external_id && !card.opportunity.external_id.startsWith("manual:") && (
-                        <a href={grantsGovUrl(card.opportunity.external_id)} target="_blank" rel="noreferrer" className="text-slate-300 hover:text-teal-600 transition-colors shrink-0">
+                        <button type="button" onClick={() => window.open(grantsGovUrl(card.opportunity.external_id!), "_blank", "noopener,noreferrer")} className="text-slate-300 hover:text-teal-600 transition-colors shrink-0">
                           <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
+                        </button>
                       )}
                       <button onClick={() => startEdit(card)} className="text-slate-300 hover:text-teal-600 transition-colors shrink-0"><Pencil className="w-3.5 h-3.5" /></button>
                     </div>
