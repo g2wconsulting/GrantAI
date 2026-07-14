@@ -5,6 +5,9 @@
   "functions": {
     "api/discover-grants.js": {
       "maxDuration": 60
+    },
+    "api/sync-grants-gov.js": {
+      "maxDuration": 60
     }
   }
 }

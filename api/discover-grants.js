@@ -19,7 +19,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-const NONPROFIT_CATEGORIES = [
+const NONPROFIT_FALLBACK_CATEGORIES = [
   { category: "Foundation", focus: "foundation grants and other private philanthropic funding" },
   { category: "Corporate", focus: "corporate giving and CSR (corporate social responsibility) programs" },
   { category: "State", focus: "state and local government grants and RFPs" },
@@ -30,6 +30,31 @@ const BUSINESS_CATEGORIES = [
   { category: "Federal R&D", focus: "SBIR/STTR and other federal R&D funding opportunities" },
   { category: "Business Competition", focus: "corporate RFPs and business competitions" },
 ];
+
+/**
+ * Builds a richer, more specific set of searches from the org's own focus
+ * areas (e.g. "Workforce Development", "Youth Services") crossed with
+ * funding source types — this is what actually gets you the volume and
+ * relevance you'd see asking Claude/ChatGPT directly, instead of 3 generic
+ * buckets covering everything at once.
+ */
+function buildCategories(org, isBusiness) {
+  if (isBusiness) return BUSINESS_CATEGORIES;
+
+  const focusAreas = Array.isArray(org.focus_areas) && org.focus_areas.length > 0 ? org.focus_areas : null;
+  if (!focusAreas) return NONPROFIT_FALLBACK_CATEGORIES;
+
+  const sourceTypes = ["foundation and private philanthropic grants", "corporate giving/CSR programs", "state and local government grants and RFPs"];
+  const categories = [];
+  // Cross each focus area with each funding-source type, but cap the total
+  // so this still fits comfortably in one request cycle.
+  for (const area of focusAreas.slice(0, 3)) {
+    for (const source of sourceTypes) {
+      categories.push({ category: area, focus: `${source} specifically for ${area.toLowerCase()} work` });
+    }
+  }
+  return categories.slice(0, 9);
+}
 
 function buildPrompt(org, isBusiness, focus, programs) {
   const programLines = programs.length
@@ -48,7 +73,7 @@ Organization profile:
 - Specific programs run:
 ${programLines}
 
-Find up to 3 real, currently open or upcoming opportunities using web search. Do not fabricate opportunities or URLs — only include ones you actually found via search. This runs under a hard ~20-second time limit: search once or twice, then answer immediately with whatever you've found. Do not double-check or re-search — first reasonable results are enough.
+Find up to 6 real, currently open or upcoming opportunities using web search. Do not fabricate opportunities or URLs — only include ones you actually found via search. This runs under a hard ~45-second time limit: search a couple of times, then answer with whatever you've found. Do not over-verify — first reasonable results are enough.
 
 Respond with ONLY a JSON array (no markdown fences, no commentary) where each item has exactly this shape:
 {
@@ -99,7 +124,7 @@ async function searchCategory(org, isBusiness, focus, programs) {
 
 async function searchWithOpenAI(prompt) {
   const controller = new AbortController();
-  const abortTimer = setTimeout(() => controller.abort(), 20000);
+  const abortTimer = setTimeout(() => controller.abort(), 45000);
   try {
     const res = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -111,7 +136,8 @@ async function searchWithOpenAI(prompt) {
       body: JSON.stringify({
         model: "gpt-5.6",
         tools: [{ type: "web_search" }],
-        search_context_size: "low",
+        search_context_size: "medium",
+        max_output_tokens: 4000,
         input: prompt,
       }),
     });
@@ -139,7 +165,7 @@ async function searchWithOpenAI(prompt) {
 async function searchWithClaude(prompt) {
   if (!ANTHROPIC_API_KEY) return null;
   const controller = new AbortController();
-  const abortTimer = setTimeout(() => controller.abort(), 20000);
+  const abortTimer = setTimeout(() => controller.abort(), 45000);
 
   try {
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -152,7 +178,7 @@ async function searchWithClaude(prompt) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-5",
-        max_tokens: 2000,
+        max_tokens: 4000,
         messages: [{ role: "user", content: prompt }],
         tools: [{ type: "web_search_20250305", name: "web_search" }],
       }),
@@ -222,7 +248,7 @@ export default async function handler(req, res) {
   }
 
   const isBusiness = /business|startup|for-profit|company|llc|inc\.?$/i.test(org.type ?? "");
-  const categories = isBusiness ? BUSINESS_CATEGORIES : NONPROFIT_CATEGORIES;
+  const categories = buildCategories(org, isBusiness);
 
   const { data: programs } = await supabase
     .from("org_programs")
