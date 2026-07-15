@@ -69,7 +69,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { orgId } = req.body || {};
+  const { orgId, broad } = req.body || {};
   if (!orgId) {
     res.status(400).json({ error: "orgId is required" });
     return;
@@ -83,12 +83,13 @@ export default async function handler(req, res) {
     return;
   }
 
-  const keywords = org.focus_areas?.length ? org.focus_areas : [org.type ?? "nonprofit"];
+  const BROAD_KEYWORDS = ["education", "health", "housing", "environment", "arts", "workforce", "veterans", "technology", "food security", "community development"];
+  const keywords = broad ? BROAD_KEYWORDS : org.focus_areas?.length ? org.focus_areas : [org.type ?? "nonprofit"];
   const seen = new Set();
   const allHits = [];
 
   try {
-    for (const kw of keywords.slice(0, 3)) {
+    for (const kw of keywords.slice(0, broad ? 10 : 3)) {
       const hits = await searchGrantsGov(kw, 15);
       for (const h of hits) {
         if (!seen.has(h.id)) {

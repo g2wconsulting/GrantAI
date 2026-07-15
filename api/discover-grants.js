@@ -59,6 +59,33 @@ function buildCategories(org, isBusiness) {
   return categories.length > 0 ? categories.slice(0, 12) : NONPROFIT_FALLBACK_CATEGORIES;
 }
 
+const BROAD_SECTORS = [
+  { category: "Education", focus: "education and youth programs" },
+  { category: "Health", focus: "health and human services" },
+  { category: "Housing", focus: "housing and community development" },
+  { category: "Environment", focus: "environmental and conservation programs" },
+  { category: "Arts & Culture", focus: "arts, culture, and humanities programs" },
+  { category: "Workforce", focus: "workforce development and job training" },
+  { category: "Veterans & Seniors", focus: "veterans services and senior/aging services" },
+  { category: "Technology", focus: "technology and digital equity programs" },
+  { category: "Food Security", focus: "food security and nutrition programs" },
+  { category: "Disaster & Safety", focus: "disaster relief and public safety programs" },
+  { category: "Small Business", focus: "small business and economic development" },
+  { category: "General Operating", focus: "general operating support and capacity building" },
+];
+
+/**
+ * A wide, GrantWatch-style sweep across many sectors at once — for
+ * "browse everything" rather than "match my specific mission."
+ */
+function buildBroadCategories() {
+  const sourceTypes = ["foundation grants", "corporate giving/CSR programs", "state and local government grants and RFPs", "federal grant opportunities"];
+  return BROAD_SECTORS.map((sector, i) => ({
+    category: sector.category,
+    focus: `${sourceTypes[i % sourceTypes.length]} for ${sector.focus}`,
+  }));
+}
+
 function buildPrompt(org, isBusiness, focus, programs) {
   const programLines = programs.length
     ? programs.map((p) => `  - ${p.name}${p.description ? `: ${p.description}` : ""}${p.people_served ? ` (serves: ${p.people_served})` : ""}`).join("\n")
@@ -221,7 +248,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { orgId } = req.body || {};
+  const { orgId, broad } = req.body || {};
   if (!orgId) {
     res.status(400).json({ error: "orgId is required" });
     return;
@@ -240,18 +267,20 @@ export default async function handler(req, res) {
     return;
   }
 
-  const hasMission = !!org.mission?.trim();
-  const hasFocusAreas = Array.isArray(org.focus_areas) && org.focus_areas.length > 0;
-  if (!hasMission && !hasFocusAreas) {
-    res.status(422).json({
-      error: "needs_profile_info",
-      message: "We need a bit more about your organization before we can search for relevant grants — add a mission statement or a few focus areas.",
-    });
-    return;
+  if (!broad) {
+    const hasMission = !!org.mission?.trim();
+    const hasFocusAreas = Array.isArray(org.focus_areas) && org.focus_areas.length > 0;
+    if (!hasMission && !hasFocusAreas) {
+      res.status(422).json({
+        error: "needs_profile_info",
+        message: "We need a bit more about your organization before we can search for relevant grants — add a mission statement or a few focus areas.",
+      });
+      return;
+    }
   }
 
   const isBusiness = /business|startup|for-profit|company|llc|inc\.?$/i.test(org.type ?? "");
-  const categories = buildCategories(org, isBusiness);
+  const categories = broad ? buildBroadCategories() : buildCategories(org, isBusiness);
 
   const { data: programs } = await supabase
     .from("org_programs")

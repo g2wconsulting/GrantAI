@@ -76,7 +76,7 @@ export function DiscoveryView() {
     }
   }, [org?.id]);
 
-  async function handleSync() {
+  async function handleSync(broad = false) {
     if (!org) return;
     setSyncing(true);
     setError(null);
@@ -84,7 +84,7 @@ export function DiscoveryView() {
       const res = await fetch("/api/sync-grants-gov", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orgId: org.id }),
+        body: JSON.stringify({ orgId: org.id, broad }),
       });
       const result = await res.json();
       if (!res.ok || result.error) setError(result.error ?? "Grants.gov sync failed");
@@ -95,7 +95,11 @@ export function DiscoveryView() {
     await load();
   }
 
-  async function handleAiSearch() {
+  async function handleBrowseAll() {
+    await Promise.all([handleSync(true), handleAiSearch(true)]);
+  }
+
+  async function handleAiSearch(broad = false) {
     if (!org) return;
     setAiSearching(true);
     setError(null);
@@ -103,7 +107,7 @@ export function DiscoveryView() {
       const res = await fetch("/api/discover-grants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orgId: org.id }),
+        body: JSON.stringify({ orgId: org.id, broad }),
       });
       let result: { error?: string; message?: string } = {};
       try {
@@ -218,9 +222,38 @@ export function DiscoveryView() {
 
   const isExpired = (deadline: string | null) => !!deadline && new Date(deadline) < new Date(new Date().toDateString());
 
+  const [searchText, setSearchText] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [minAmount, setMinAmount] = useState("");
+  const [maxAmount, setMaxAmount] = useState("");
+  const [sortBy, setSortBy] = useState<"match" | "deadline">("match");
+
+  const availableCategories = ["All", ...Array.from(new Set(rows.map((r) => r.opportunity.category).filter(Boolean) as string[]))];
+
   const visibleRows = rows
     .filter((r) => (view === "saved" ? r.saved : !r.saved))
-    .filter((r) => showExpired || !isExpired(r.opportunity.deadline));
+    .filter((r) => showExpired || !isExpired(r.opportunity.deadline))
+    .filter((r) => categoryFilter === "All" || r.opportunity.category === categoryFilter)
+    .filter((r) => {
+      if (!searchText.trim()) return true;
+      const haystack = `${r.opportunity.title} ${r.opportunity.funder} ${r.opportunity.category ?? ""}`.toLowerCase();
+      return haystack.includes(searchText.toLowerCase());
+    })
+    .filter((r) => {
+      const floor = (r.opportunity as any).amount_floor;
+      const ceiling = (r.opportunity as any).amount_ceiling;
+      if (minAmount && ceiling != null && ceiling < Number(minAmount)) return false;
+      if (maxAmount && floor != null && floor > Number(maxAmount)) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "deadline") {
+        if (!a.opportunity.deadline) return 1;
+        if (!b.opportunity.deadline) return -1;
+        return new Date(a.opportunity.deadline).getTime() - new Date(b.opportunity.deadline).getTime();
+      }
+      return b.match_score - a.match_score;
+    });
 
   const expiredHiddenCount = rows
     .filter((r) => (view === "saved" ? r.saved : !r.saved))
@@ -234,22 +267,36 @@ export function DiscoveryView() {
         <div className="flex items-center gap-3">
           <div className="flex-1 flex items-center gap-2 bg-[#f0fbf5] rounded-xl px-3 py-2.5 border border-border">
             <Search className="w-4 h-4 text-slate-400 shrink-0" />
-            <input className="flex-1 bg-transparent text-sm text-slate-700 placeholder:text-slate-400 outline-none" placeholder="Search grants by keyword, funder, category, amount..." />
+            <input value={searchText} onChange={(e) => setSearchText(e.target.value)} className="flex-1 bg-transparent text-sm text-slate-700 placeholder:text-slate-400 outline-none" placeholder="Search grants by keyword, funder, category..." />
           </div>
-          <button onClick={handleSync} disabled={syncing} className={BTN_SECONDARY}>
+          <button onClick={handleBrowseAll} disabled={syncing || aiSearching} className={BTN_PRIMARY}>
+            <Sparkles className={`w-3.5 h-3.5 ${syncing || aiSearching ? "animate-pulse" : ""}`} />
+            {syncing || aiSearching ? "Populating…" : "Browse Full Directory"}
+          </button>
+        </div>
+        <div className="flex items-center gap-2 mt-3">
+          <button onClick={() => handleSync(false)} disabled={syncing} className={BTN_SECONDARY}>
             <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
             {syncing ? "Syncing…" : "Sync Grants.gov"}
           </button>
-          <button onClick={handleAiSearch} disabled={aiSearching} className={BTN_PRIMARY}>
+          <button onClick={() => handleAiSearch(false)} disabled={aiSearching} className={BTN_SECONDARY}>
             <Sparkles className={`w-3.5 h-3.5 ${aiSearching ? "animate-pulse" : ""}`} />
-            {aiSearching ? "Searching the web…" : "AI Web Search"}
+            {aiSearching ? "Searching…" : "AI Search (Your Mission Only)"}
           </button>
         </div>
         {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-        <div className="flex items-center gap-2 mt-3 flex-wrap">
-          <span className="text-sm text-slate-400">
-            Grants.gov (federal) + AI web search (foundations, corporate, state/local), matched against: {org?.focus_areas?.join(", ") || "your org profile"}
-          </span>
+
+        <div className="flex items-center gap-3 mt-3 flex-wrap pt-3 border-t border-border">
+          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="text-sm border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-teal-300">
+            {availableCategories.map((c) => <option key={c} value={c}>{c === "All" ? "All Categories" : c}</option>)}
+          </select>
+          <input placeholder="Min $" type="number" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="w-24 text-sm border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-teal-300" />
+          <span className="text-sm text-slate-300">–</span>
+          <input placeholder="Max $" type="number" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="w-24 text-sm border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-teal-300" />
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as "match" | "deadline")} className="text-sm border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-teal-300">
+            <option value="match">Sort: Best Match</option>
+            <option value="deadline">Sort: Deadline Soonest</option>
+          </select>
           <span className="ml-auto text-sm text-slate-400">{visibleRows.length} shown</span>
         </div>
       </div>
